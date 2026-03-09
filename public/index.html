@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenClaw Agentic Trace</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="masthead">
+        <div class="masthead-copy">
+          <p class="eyebrow">OpenClaw Agentic Trace</p>
+          <h1>Session 到终端消息的行为链路</h1>
+          <p class="lede">
+            先选 session，再选 `assistant + stopReason=stop`
+            的终端消息。页面会截取上一条终端消息之后到当前消息为止的事件流，并拆出 think、toolCall、toolResult 和最终回复。
+          </p>
+        </div>
+        <div class="masthead-actions">
+          <button id="reloadButton" class="ghost-button" type="button">
+            重新读取
+          </button>
+          <button id="fileButton" class="solid-button" type="button">
+            选择本地文件
+          </button>
+          <input
+            id="fileInput"
+            type="file"
+            accept=".json,.jsonl"
+            multiple
+            hidden
+          />
+        </div>
+      </header>
+
+      <div id="statusBar" class="status-bar" data-tone="info">
+        正在初始化页面…
+      </div>
+
+      <main class="workspace-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Step 1</p>
+              <h2>Sessions</h2>
+            </div>
+            <span id="sessionCount" class="panel-chip">0</span>
+          </div>
+          <label class="search-field">
+            <span>搜索 session</span>
+            <input
+              id="sessionSearch"
+              type="search"
+              placeholder="sessionId / provider / label"
+            />
+          </label>
+          <div id="sessionList" class="list-stack"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Step 2</p>
+              <h2>终端消息</h2>
+            </div>
+            <span id="messageCount" class="panel-chip">0</span>
+          </div>
+          <div id="sessionMeta" class="session-meta empty-note">
+            选择一个 session 之后，这里会展示终端消息列表。
+          </div>
+          <div id="messageList" class="list-stack"></div>
+        </section>
+
+        <section class="panel panel-chain">
+          <div class="panel-head">
+            <div>
+              <p class="panel-kicker">Step 3</p>
+              <h2>Agentic 链路</h2>
+            </div>
+          </div>
+          <div id="chainSummary" class="chain-summary empty-note">
+            选择终端消息之后，这里会展示当前消息生成过程中的 agent 行为链路。
+          </div>
+          <div id="chainTimeline" class="timeline"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

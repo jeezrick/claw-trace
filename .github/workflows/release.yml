@@ -1,0 +1,27 @@
+name: release-trace-service
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build bundle
+        run: |
+          chmod +x trace-service/build-bundle.sh
+          trace-service/build-bundle.sh
+
+      - name: Create GitHub Release and upload asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: trace-service/public/trace-service.tgz
+          generate_release_notes: true
