@@ -46,7 +46,7 @@ fi
 
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 cp -a "$SRC/." "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/claw-trace" "$INSTALL_DIR/run.sh" "$INSTALL_DIR/build-bundle.sh" || true
+chmod +x "$INSTALL_DIR/claw-trace" "$INSTALL_DIR/run.sh" || true
 ln -sf "$INSTALL_DIR/claw-trace" "$BIN_DIR/claw-trace"
 
 echo "[claw-trace] installed to $INSTALL_DIR"

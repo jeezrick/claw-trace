@@ -2,7 +2,16 @@
 set -euo pipefail
 
 REPO="${CLAW_TRACE_REPO:-jeezrick/claw-trace}"
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT_PATH" ]]; do
+  LINK_TARGET="$(readlink "$SCRIPT_PATH")"
+  if [[ "$LINK_TARGET" == /* ]]; then
+    SCRIPT_PATH="$LINK_TARGET"
+  else
+    SCRIPT_PATH="$(cd "$(dirname "$SCRIPT_PATH")" && cd "$(dirname "$LINK_TARGET")" && pwd)/$(basename "$LINK_TARGET")"
+  fi
+done
+APP_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 STATE_DIR="${CLAW_TRACE_STATE_DIR:-$HOME/.local/state/claw-trace}"
 PID_FILE="$STATE_DIR/server.pid"
 LOG_FILE="${CLAW_TRACE_LOG_FILE:-/tmp/claw-trace.log}"
