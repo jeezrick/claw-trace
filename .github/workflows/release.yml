@@ -17,11 +17,11 @@ jobs:
 
       - name: Build bundle
         run: |
-          chmod +x trace-service/build-bundle.sh
-          trace-service/build-bundle.sh
+          chmod +x build-bundle.sh
+          ./build-bundle.sh
 
       - name: Create GitHub Release and upload asset
         uses: softprops/action-gh-release@v2
         with:
-          files: trace-service/public/trace-service.tgz
+          files: public/trace-service.tgz
           generate_release_notes: true
