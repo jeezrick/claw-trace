@@ -701,6 +701,13 @@ function renderTerminalMessages() {
       : `${formatAbsoluteTime(terminal.timestamp)} · row ${terminal.rowIndex}`;
     button.appendChild(meta);
 
+    if (terminal.pending) {
+      const pendingBadge = document.createElement("span");
+      pendingBadge.className = "pending-badge";
+      pendingBadge.textContent = "待回复";
+      button.appendChild(pendingBadge);
+    }
+
     const preview = document.createElement("p");
     preview.className = "list-card-preview";
     preview.textContent = terminal.fullText;

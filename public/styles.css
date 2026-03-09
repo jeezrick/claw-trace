@@ -369,6 +369,22 @@ details.expandable summary:focus-visible {
   white-space: nowrap;
 }
 
+.pending-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2f2307;
+  background: linear-gradient(135deg, #ffd978, #ffbf47);
+  border: 1px solid rgba(255, 205, 86, 0.8);
+}
+
 .session-meta {
   margin-bottom: 16px;
   padding: 14px 16px;
@@ -758,6 +774,12 @@ code.inline-code {
 :root[data-theme="light"] .summary-pill {
   background: rgba(255, 255, 255, 0.92);
   color: #2a3d58;
+}
+
+:root[data-theme="light"] .pending-badge {
+  color: #5a3900;
+  background: linear-gradient(135deg, #ffe8a8, #ffc85a);
+  border-color: rgba(255, 191, 71, 0.88);
 }
 
 :root[data-theme="light"] .session-meta,
