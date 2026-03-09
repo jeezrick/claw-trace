@@ -7,15 +7,34 @@
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
 
-## 一键安装（GitHub Release，公开下载）
-
-当你发布了 `v1.0.0` 之类的 Release 后，对方可直接执行：
+## 一键安装（推荐）
 
 ```bash
-curl -fsSL https://github.com/jeezrick/claw-trace/releases/download/v1.0.0/trace-service.tgz | tar -xz && cd trace-service && chmod +x run.sh && nohup ./run.sh >/tmp/trace-service.log 2>&1 &
+curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | bash
 ```
 
-启动后访问：`http://<对方机器IP>:8787`
+安装后：
+
+```bash
+claw-trace start
+claw-trace status
+```
+
+访问：`http://<对方机器IP>:8787`
+
+## 命令行用法（支持 update）
+
+```bash
+claw-trace start
+claw-trace stop
+claw-trace restart
+claw-trace status
+claw-trace logs
+claw-trace version
+claw-trace update           # 更新到 latest
+claw-trace update v1.0.2    # 更新到指定版本
+claw-trace rollback
+```
 
 ## 发布到 GitHub（方案 A）
 
@@ -29,7 +48,7 @@ git push origin main --tags
 ```
 
 4. 本项目内置了 GitHub Actions（`.github/workflows/release.yml`），会自动：
-   - 运行 `trace-service/build-bundle.sh`
+   - 运行 `./build-bundle.sh`
    - 生成 `trace-service.tgz`
    - 创建 Release 并上传该资产
 
@@ -38,7 +57,7 @@ git push origin main --tags
 ## 本机启动
 
 ```bash
-cd /root/.openclaw/workspace/trace-service
+cd /root/code/claw-trace
 node server.js
 ```
 

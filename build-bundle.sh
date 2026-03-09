@@ -12,7 +12,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 mkdir -p "$TMP_DIR/trace-service"
 cp -r "$ROOT_DIR/public" "$TMP_DIR/trace-service/public"
-cp "$ROOT_DIR/server.js" "$ROOT_DIR/run.sh" "$ROOT_DIR/package.json" "$ROOT_DIR/README.md" "$TMP_DIR/trace-service/"
+cp "$ROOT_DIR/server.js" "$ROOT_DIR/run.sh" "$ROOT_DIR/package.json" "$ROOT_DIR/README.md" "$ROOT_DIR/VERSION" "$ROOT_DIR/claw-trace" "$TMP_DIR/trace-service/"
 
 rm -f "$TMP_DIR/trace-service/public/trace-service.tgz"
 

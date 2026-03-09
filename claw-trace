@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO="${CLAW_TRACE_REPO:-jeezrick/claw-trace}"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_DIR="${CLAW_TRACE_STATE_DIR:-$HOME/.local/state/claw-trace}"
+PID_FILE="$STATE_DIR/server.pid"
+LOG_FILE="${CLAW_TRACE_LOG_FILE:-/tmp/claw-trace.log}"
+PORT="${PORT:-8787}"
+HOST="${HOST:-0.0.0.0}"
+SESSIONS_DIR="${SESSIONS_DIR:-/root/.openclaw/agents/main/sessions}"
+
+mkdir -p "$STATE_DIR"
+
+version() {
+  if [[ -f "$APP_DIR/VERSION" ]]; then
+    cat "$APP_DIR/VERSION"
+  else
+    echo "unknown"
+  fi
+}
+
+running_pid() {
+  if [[ -f "$PID_FILE" ]]; then
+    local pid
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "$pid"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+start() {
+  if pid="$(running_pid)"; then
+    echo "claw-trace already running (pid=$pid)"
+    return 0
+  fi
+
+  nohup env PORT="$PORT" HOST="$HOST" SESSIONS_DIR="$SESSIONS_DIR" \
+    node "$APP_DIR/server.js" >>"$LOG_FILE" 2>&1 &
+  local pid=$!
+  echo "$pid" > "$PID_FILE"
+  sleep 0.4
+
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "claw-trace started (pid=$pid)"
+    echo "url: http://$HOST:$PORT"
+    echo "log: $LOG_FILE"
+  else
+    echo "failed to start. check log: $LOG_FILE" >&2
+    exit 1
+  fi
+}
+
+stop() {
+  if pid="$(running_pid)"; then
+    kill "$pid" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    echo "claw-trace stopped"
+  else
+    echo "claw-trace is not running"
+  fi
+}
+
+status() {
+  local v
+  v="$(version)"
+  if pid="$(running_pid)"; then
+    echo "claw-trace $v running (pid=$pid)"
+    echo "log: $LOG_FILE"
+  else
+    echo "claw-trace $v stopped"
+  fi
+}
+
+logs() {
+  touch "$LOG_FILE"
+  tail -f "$LOG_FILE"
+}
+
+latest_tag() {
+  curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+    | grep -m1 '"tag_name"' \
+    | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+}
+
+update() {
+  local tag="${1:-latest}"
+  if [[ "$tag" == "latest" ]]; then
+    tag="$(latest_tag)"
+  fi
+
+  if [[ -z "$tag" ]]; then
+    echo "unable to resolve release tag" >&2
+    exit 1
+  fi
+
+  local current
+  current="$(version)"
+  if [[ "$current" == "$tag" ]]; then
+    echo "already on $current"
+    return 0
+  fi
+
+  local url="https://github.com/$REPO/releases/download/$tag/trace-service.tgz"
+  local tmp
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+
+  echo "downloading $url"
+  curl -fsSL "$url" | tar -xz -C "$tmp"
+
+  local src="$tmp/trace-service"
+  if [[ ! -f "$src/server.js" ]]; then
+    echo "invalid bundle: server.js missing" >&2
+    exit 1
+  fi
+
+  local was_running=0
+  if running_pid >/dev/null; then
+    was_running=1
+    stop
+  fi
+
+  cp -a "$APP_DIR" "$APP_DIR.backup.$(date +%Y%m%d-%H%M%S)"
+  cp -a "$src/." "$APP_DIR/"
+  chmod +x "$APP_DIR/run.sh" "$APP_DIR/build-bundle.sh" "$APP_DIR/claw-trace" || true
+
+  echo "updated: $current -> $(version)"
+  if [[ "$was_running" == "1" ]]; then
+    start
+  fi
+}
+
+rollback() {
+  local latest_backup
+  latest_backup="$(ls -dt "$APP_DIR".backup.* 2>/dev/null | head -n1 || true)"
+  if [[ -z "$latest_backup" ]]; then
+    echo "no backup found"
+    exit 1
+  fi
+
+  local was_running=0
+  if running_pid >/dev/null; then
+    was_running=1
+    stop
+  fi
+
+  cp -a "$latest_backup/." "$APP_DIR/"
+  echo "rolled back using $latest_backup"
+
+  if [[ "$was_running" == "1" ]]; then
+    start
+  fi
+}
+
+usage() {
+  cat <<EOF
+claw-trace commands:
+  start              Start service in background
+  stop               Stop service
+  restart            Restart service
+  status             Show service status
+  logs               Tail service logs
+  version            Show installed version
+  update [tag]       Update from GitHub release (default: latest)
+  rollback           Roll back to latest local backup
+EOF
+}
+
+cmd="${1:-status}"
+shift || true
+
+case "$cmd" in
+  start) start ;;
+  stop) stop ;;
+  restart) stop; start ;;
+  status) status ;;
+  logs) logs ;;
+  version) version ;;
+  update) update "${1:-latest}" ;;
+  rollback) rollback ;;
+  *) usage; exit 1 ;;
+esac
