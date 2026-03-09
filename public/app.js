@@ -243,7 +243,7 @@ function isTerminalAssistantMessage(event) {
 }
 
 function buildTerminalMessages(events) {
-  return events
+  const terminals = events
     .filter(isTerminalAssistantMessage)
     .map((event, index) => {
       const text = cleanAssistantText(extractTextContent(event.message.content));
@@ -256,8 +256,38 @@ function buildTerminalMessages(events) {
         preview: previewText(text),
         fullText: text || "(空文本)",
         event,
+        pending: false,
       };
     });
+
+  const lastTerminalRow = terminals.length
+    ? terminals[terminals.length - 1].rowIndex
+    : -1;
+
+  const tailEvents = events.filter((event) => event.__rowIndex > lastTerminalRow);
+  const tailUsers = tailEvents.filter(
+    (event) => event?.type === "message" && event?.message?.role === "user",
+  );
+
+  if (tailUsers.length) {
+    const pendingUser = tailUsers[tailUsers.length - 1];
+    const userText = normalizeUserText(
+      extractTextContent(pendingUser.message?.content || []),
+    );
+
+    terminals.push({
+      ordinal: terminals.length + 1,
+      rowIndex: pendingUser.__rowIndex,
+      id: pendingUser.id,
+      timestamp: pendingUser.timestamp,
+      preview: previewText(userText || "(空文本)"),
+      fullText: userText || "(空文本)",
+      event: pendingUser,
+      pending: true,
+    });
+  }
+
+  return terminals;
 }
 
 function detectToolResultError(message) {
@@ -642,7 +672,7 @@ function renderTerminalMessages() {
   if (!count) {
     const empty = document.createElement("div");
     empty.className = "empty-note";
-    empty.textContent = "这个 session 里没有 assistant + stopReason=stop 的终端消息。";
+    empty.textContent = "这个 session 里还没有可展示的终端消息。";
     elements.messageList.appendChild(empty);
     return;
   }
@@ -659,12 +689,16 @@ function renderTerminalMessages() {
 
     const title = document.createElement("p");
     title.className = "list-card-title";
-    title.textContent = `#${terminal.ordinal} · ${terminal.preview}`;
+    title.textContent = terminal.pending
+      ? `#${terminal.ordinal} · 未回复消息：${terminal.preview}`
+      : `#${terminal.ordinal} · ${terminal.preview}`;
     button.appendChild(title);
 
     const meta = document.createElement("p");
     meta.className = "list-card-meta";
-    meta.textContent = `${formatAbsoluteTime(terminal.timestamp)} · row ${terminal.rowIndex}`;
+    meta.textContent = terminal.pending
+      ? `${formatAbsoluteTime(terminal.timestamp)} · row ${terminal.rowIndex} · pending`
+      : `${formatAbsoluteTime(terminal.timestamp)} · row ${terminal.rowIndex}`;
     button.appendChild(meta);
 
     const preview = document.createElement("p");
@@ -714,19 +748,29 @@ function renderChain() {
   elements.chainSummary.className = "chain-summary";
 
   const heading = document.createElement("h3");
-  heading.textContent = `#${currentTerminal.ordinal} 的生成链路`;
+  heading.textContent = currentTerminal.pending
+    ? `#${currentTerminal.ordinal} 的待回复链路`
+    : `#${currentTerminal.ordinal} 的生成链路`;
   elements.chainSummary.appendChild(heading);
 
   const context = document.createElement("p");
   context.className = "chain-context";
-  context.textContent = previousTerminal
-    ? `区间：上一条终端消息 #${previousTerminal.ordinal} 之后，到当前终端消息 #${currentTerminal.ordinal} 为止。`
-    : "区间：这是首条终端消息，链路从 session 开始处截取到当前终端消息。";
+  if (currentTerminal.pending) {
+    context.textContent = previousTerminal
+      ? `区间：上一条终端消息 #${previousTerminal.ordinal} 之后，到最近一条用户消息为止（当前还未生成 assistant 终端回复）。`
+      : "区间：从 session 开始到最近一条用户消息为止（当前还未生成 assistant 终端回复）。";
+  } else {
+    context.textContent = previousTerminal
+      ? `区间：上一条终端消息 #${previousTerminal.ordinal} 之后，到当前终端消息 #${currentTerminal.ordinal} 为止。`
+      : "区间：这是首条终端消息，链路从 session 开始处截取到当前终端消息。";
+  }
   elements.chainSummary.appendChild(context);
 
   const replyPreview = document.createElement("div");
   replyPreview.className = "reply-preview";
-  replyPreview.textContent = currentTerminal.fullText;
+  replyPreview.textContent = currentTerminal.pending
+    ? `未回复用户消息：${currentTerminal.fullText}`
+    : currentTerminal.fullText;
   elements.chainSummary.appendChild(replyPreview);
 
   if (lastUserStep) {
