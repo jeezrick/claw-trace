@@ -7,6 +7,7 @@ const state = {
   selectedTerminalIndex: null,
   sessionCache: new Map(),
   localFiles: new Map(),
+  sourceModalOpen: false,
 };
 
 const elements = {
@@ -23,6 +24,9 @@ const elements = {
   reloadButton: document.querySelector("#reloadButton"),
   fileButton: document.querySelector("#fileButton"),
   fileInput: document.querySelector("#fileInput"),
+  sourceModal: document.querySelector("#sourceModal"),
+  sourceModalContent: document.querySelector("#sourceModalContent"),
+  sourceModalClose: document.querySelector("#sourceModalClose"),
 };
 
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -289,6 +293,7 @@ function buildChainSteps(events) {
         timestamp: event.timestamp,
         body: userText || "(空文本)",
         meta: `row ${event.__rowIndex}`,
+        raw: event,
       });
       continue;
     }
@@ -305,6 +310,7 @@ function buildChainSteps(events) {
           body: message.errorMessage || "模型请求失败，没有返回内容。",
           meta: `row ${event.__rowIndex} · stopReason=${message.stopReason}`,
           isError: true,
+          raw: event,
         });
       }
 
@@ -317,6 +323,7 @@ function buildChainSteps(events) {
             timestamp: event.timestamp,
             body: item.thinking || "(空 thinking)",
             meta: `row ${event.__rowIndex}`,
+            raw: { event, item },
           });
           continue;
         }
@@ -329,6 +336,7 @@ function buildChainSteps(events) {
             timestamp: event.timestamp,
             body: prettyValue(item.arguments),
             meta: `row ${event.__rowIndex} · callId=${item.id || "-"}`,
+            raw: { event, item },
           });
           continue;
         }
@@ -343,6 +351,7 @@ function buildChainSteps(events) {
             timestamp: event.timestamp,
             body: text || "(空文本)",
             meta: `row ${event.__rowIndex} · stopReason=${message.stopReason || "-"}`,
+            raw: { event, item },
           });
           continue;
         }
@@ -354,6 +363,7 @@ function buildChainSteps(events) {
           timestamp: event.timestamp,
           body: prettyValue(item),
           meta: `row ${event.__rowIndex}`,
+          raw: { event, item },
         });
       }
 
@@ -371,6 +381,7 @@ function buildChainSteps(events) {
           body: message.errorMessage || "该 assistant 消息以异常 stopReason 结束。",
           meta: `row ${event.__rowIndex}`,
           isError: true,
+          raw: event,
         });
       }
 
@@ -388,6 +399,7 @@ function buildChainSteps(events) {
         body: toolResultText || "(空结果)",
         meta: `row ${event.__rowIndex} · callId=${message.toolCallId || "-"}`,
         isError: detectToolResultError(message),
+        raw: event,
       });
     }
   }
@@ -487,6 +499,39 @@ function createSnippet(text) {
   pre.className = "snippet";
   pre.textContent = text;
   return pre;
+}
+
+function openSourceModal(raw, title = "源码") {
+  if (!elements.sourceModal || !elements.sourceModalContent) {
+    return;
+  }
+  const text =
+    typeof raw === "string"
+      ? raw
+      : (() => {
+          try {
+            return JSON.stringify(raw, null, 2);
+          } catch (_) {
+            return String(raw);
+          }
+        })();
+
+  elements.sourceModalContent.textContent = text;
+  const titleEl = document.querySelector("#sourceModalTitle");
+  if (titleEl) {
+    titleEl.textContent = title;
+  }
+  elements.sourceModal.classList.remove("hidden");
+  state.sourceModalOpen = true;
+}
+
+function closeSourceModal() {
+  if (!elements.sourceModal || !elements.sourceModalContent) {
+    return;
+  }
+  elements.sourceModal.classList.add("hidden");
+  elements.sourceModalContent.textContent = "";
+  state.sourceModalOpen = false;
 }
 
 function appendExpandableContent(container, text) {
@@ -762,6 +807,15 @@ function renderChain() {
     content.className = "timeline-content";
     appendExpandableContent(content, step.body);
 
+    const sourceButton = document.createElement("button");
+    sourceButton.type = "button";
+    sourceButton.className = "source-button";
+    sourceButton.textContent = "查看源码";
+    sourceButton.addEventListener("click", () => {
+      openSourceModal(step.raw || step.body || "", `${step.label} · ${step.title}`);
+    });
+    content.appendChild(sourceButton);
+
     const meta = document.createElement("p");
     meta.className = "step-meta";
     meta.textContent = step.meta;
@@ -897,6 +951,24 @@ elements.fileButton.addEventListener("click", () => {
 });
 
 elements.fileInput.addEventListener("change", handleFileImport);
+
+if (elements.sourceModalClose) {
+  elements.sourceModalClose.addEventListener("click", closeSourceModal);
+}
+
+if (elements.sourceModal) {
+  elements.sourceModal.addEventListener("click", (event) => {
+    if (event.target === elements.sourceModal) {
+      closeSourceModal();
+    }
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.sourceModalOpen) {
+    closeSourceModal();
+  }
+});
 
 initTheme();
 loadSessionsIndex();
