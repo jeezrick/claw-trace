@@ -19,6 +19,7 @@ const elements = {
   chainSummary: document.querySelector("#chainSummary"),
   chainTimeline: document.querySelector("#chainTimeline"),
   sessionSearch: document.querySelector("#sessionSearch"),
+  themeButton: document.querySelector("#themeButton"),
   reloadButton: document.querySelector("#reloadButton"),
   fileButton: document.querySelector("#fileButton"),
   fileInput: document.querySelector("#fileInput"),
@@ -33,6 +34,40 @@ const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   second: "2-digit",
   hour12: false,
 });
+
+const THEME_KEY = "claw-trace-theme";
+
+function applyTheme(theme) {
+  const target = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", target);
+  if (elements.themeButton) {
+    elements.themeButton.textContent =
+      target === "light" ? "☀️ 浅色" : "🌙 深色";
+  }
+  try {
+    localStorage.setItem(THEME_KEY, target);
+  } catch (_) {
+    // ignore storage errors
+  }
+}
+
+function initTheme() {
+  let preferred = "dark";
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") {
+      preferred = saved;
+    } else if (
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: light)").matches
+    ) {
+      preferred = "light";
+    }
+  } catch (_) {
+    // ignore storage errors
+  }
+  applyTheme(preferred);
+}
 
 function setStatus(message, tone = "info") {
   elements.statusBar.dataset.tone = tone;
@@ -845,6 +880,13 @@ elements.sessionSearch.addEventListener("input", (event) => {
   renderSessions();
 });
 
+if (elements.themeButton) {
+  elements.themeButton.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    applyTheme(current === "dark" ? "light" : "dark");
+  });
+}
+
 elements.reloadButton.addEventListener("click", async () => {
   state.sessionCache.clear();
   await loadSessionsIndex();
@@ -856,4 +898,5 @@ elements.fileButton.addEventListener("click", () => {
 
 elements.fileInput.addEventListener("change", handleFileImport);
 
+initTheme();
 loadSessionsIndex();

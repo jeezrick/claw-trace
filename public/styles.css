@@ -19,6 +19,24 @@
   --radius-sm: 10px;
 }
 
+:root[data-theme="light"] {
+  --bg: #f4f7fb;
+  --bg-accent: #eaf1fb;
+  --panel: rgba(255, 255, 255, 0.86);
+  --panel-strong: rgba(255, 255, 255, 0.96);
+  --line: rgba(25, 45, 75, 0.12);
+  --line-strong: rgba(25, 45, 75, 0.25);
+  --text: #142238;
+  --muted: #5a6f8d;
+  --gold: #b67826;
+  --teal: #0f9e8d;
+  --cyan: #2e83d9;
+  --salmon: #d06f60;
+  --red: #d25245;
+  --shadow: 0 20px 44px rgba(11, 31, 58, 0.14);
+  --shadow-soft: 0 10px 22px rgba(11, 31, 58, 0.1);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -34,13 +52,14 @@ body {
   font-family: "Avenir Next", "Segoe UI Variable", "PingFang SC", "Noto Sans SC",
     sans-serif;
   background:
-    radial-gradient(circle at top left, rgba(247, 199, 126, 0.12), transparent 28%),
-    radial-gradient(circle at top right, rgba(90, 216, 199, 0.1), transparent 30%),
-    radial-gradient(circle at bottom, rgba(136, 204, 255, 0.08), transparent 35%),
-    linear-gradient(165deg, #050a11 0%, #09121d 46%, #0d1828 100%);
+    radial-gradient(circle at top left, color-mix(in srgb, var(--gold) 18%, transparent), transparent 28%),
+    radial-gradient(circle at top right, color-mix(in srgb, var(--teal) 14%, transparent), transparent 30%),
+    radial-gradient(circle at bottom, color-mix(in srgb, var(--cyan) 12%, transparent), transparent 35%),
+    linear-gradient(165deg, var(--bg) 0%, color-mix(in srgb, var(--bg) 72%, var(--bg-accent) 28%) 46%, var(--bg-accent) 100%);
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background 260ms ease, color 200ms ease;
 }
 
 body::before {
@@ -132,9 +151,9 @@ input {
 }
 
 .solid-button {
-  color: #09111c;
+  color: color-mix(in srgb, var(--bg) 86%, #000 14%);
   font-weight: 700;
-  background: linear-gradient(135deg, var(--gold), #ffe3aa);
+  background: linear-gradient(135deg, var(--gold), color-mix(in srgb, var(--gold) 64%, white 36%));
 }
 
 .ghost-button {
@@ -317,7 +336,7 @@ details.expandable summary:focus-visible {
   margin: 10px 0 0;
   font-size: 13px;
   line-height: 1.6;
-  color: #d9e4f2;
+  color: color-mix(in srgb, var(--text) 88%, var(--muted) 12%);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -545,8 +564,8 @@ details.expandable .snippet {
 code.inline-code {
   padding: 2px 6px;
   border-radius: 999px;
-  color: #09111c;
-  background: #d5e6f7;
+  color: color-mix(in srgb, var(--bg) 86%, #000 14%);
+  background: color-mix(in srgb, var(--cyan) 28%, white 72%);
 }
 
 @keyframes rise-in {
