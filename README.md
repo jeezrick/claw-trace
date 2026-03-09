@@ -36,6 +36,7 @@ claw-trace stop
 claw-trace restart
 claw-trace status
 claw-trace logs
+claw-trace doctor           # 一键健康检查（进程/文件/API/raw-stream）
 claw-trace version
 claw-trace update           # 更新到 latest
 claw-trace update v1.0.2    # 更新到指定版本
@@ -97,3 +98,52 @@ node server.js
 - `GET /api/raw-stream?replay=120` -> SSE 实时流（先回放 recent，再持续推送）
 
 > 安全限制：仅允许读取 `sessions.json` 和形如 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jsonl` 的文件名。
+
+## 设计原理（实时链路）
+
+### 1) 为什么单看 session jsonl 不够
+
+`sessions/*.jsonl` 是会话历史持久化，写入通常以“消息级/阶段性”落盘为主。
+在一次执行尚未结束时，常会先看到 user message，看不到完整未完成链路。
+
+### 2) 方案：Raw Stream + SSE
+
+- 网关侧开启 raw stream 落盘（`OPENCLAW_RAW_STREAM=1`）
+- claw-trace 后端轮询 `RAW_STREAM_FILE` 增量读取（类似 tail）
+- 后端通过 SSE (`/api/raw-stream`) 推送给前端
+- 前端实时渲染并提供过滤/暂停/清空
+
+这样可以在执行未完成前，就看到中间 chunk/event。
+
+### 3) 后端实现要点
+
+- `RAW_STREAM_FILE` 默认：`~/.openclaw/logs/raw-stream.jsonl`
+- `RAW_POLL_MS` 默认：`700ms`
+- 首次连接时：
+  - 返回 `meta`（当前 raw 文件路径）
+  - 可回放最近 N 条（`replay` 参数）
+- 增量读取策略：
+  - 维护读取偏移 `position`
+  - 处理日志轮转/截断（inode 或 size 回退）
+  - 行缓冲（避免半行 JSON）
+
+### 4) 前端实现要点
+
+- 新增 Live 面板（与原有 3-step 视图同页）
+- EventSource 连接 `/api/raw-stream`
+- `meta` 事件用于显示当前 raw 文件来源
+- `message` 事件按行显示，支持：
+  - 关键词过滤
+  - 暂停/继续渲染
+  - 清空窗口
+
+### 5) 运维排障（doctor）
+
+新增 `claw-trace doctor`，自动检查：
+
+- 服务进程是否在运行
+- `SESSIONS_DIR` / `sessions.json` 可读性
+- `RAW_STREAM_FILE` 是否存在、可读、是否增长
+- `http://127.0.0.1:$PORT/api/config` 是否可访问
+
+用于快速判断“为什么实时面板没数据”。

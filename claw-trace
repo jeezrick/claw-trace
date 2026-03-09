@@ -18,6 +18,8 @@ LOG_FILE="${CLAW_TRACE_LOG_FILE:-/tmp/claw-trace.log}"
 PORT="${PORT:-8787}"
 HOST="${HOST:-0.0.0.0}"
 SESSIONS_DIR="${SESSIONS_DIR:-/root/.openclaw/agents/main/sessions}"
+RAW_STREAM_FILE="${RAW_STREAM_FILE:-$HOME/.openclaw/logs/raw-stream.jsonl}"
+RAW_POLL_MS="${RAW_POLL_MS:-700}"
 
 mkdir -p "$STATE_DIR"
 
@@ -47,8 +49,14 @@ start() {
     return 0
   fi
 
-  nohup env PORT="$PORT" HOST="$HOST" SESSIONS_DIR="$SESSIONS_DIR" \
+  nohup env \
+    PORT="$PORT" \
+    HOST="$HOST" \
+    SESSIONS_DIR="$SESSIONS_DIR" \
+    RAW_STREAM_FILE="$RAW_STREAM_FILE" \
+    RAW_POLL_MS="$RAW_POLL_MS" \
     node "$APP_DIR/server.js" >>"$LOG_FILE" 2>&1 &
+
   local pid=$!
   echo "$pid" > "$PID_FILE"
   sleep 0.4
@@ -87,6 +95,102 @@ status() {
 logs() {
   touch "$LOG_FILE"
   tail -f "$LOG_FILE"
+}
+
+check_ok() {
+  echo "✅ $1"
+}
+
+check_warn() {
+  echo "⚠️  $1"
+}
+
+check_fail() {
+  echo "❌ $1"
+}
+
+doctor() {
+  local failed=0
+  local warned=0
+
+  echo "claw-trace doctor"
+  echo "version: $(version)"
+  echo "host: $HOST"
+  echo "port: $PORT"
+  echo "sessions_dir: $SESSIONS_DIR"
+  echo "raw_stream_file: $RAW_STREAM_FILE"
+  echo "raw_poll_ms: $RAW_POLL_MS"
+  echo
+
+  if pid="$(running_pid)"; then
+    check_ok "服务进程在运行 (pid=$pid)"
+  else
+    check_fail "服务未运行（可执行: claw-trace start）"
+    failed=1
+  fi
+
+  if [[ -d "$SESSIONS_DIR" ]]; then
+    check_ok "SESSIONS_DIR 存在"
+  else
+    check_fail "SESSIONS_DIR 不存在: $SESSIONS_DIR"
+    failed=1
+  fi
+
+  if [[ -r "$SESSIONS_DIR/sessions.json" ]]; then
+    check_ok "可读取 sessions.json"
+  else
+    check_warn "sessions.json 不可读或不存在: $SESSIONS_DIR/sessions.json"
+    warned=1
+  fi
+
+  if [[ -e "$RAW_STREAM_FILE" ]]; then
+    if [[ -r "$RAW_STREAM_FILE" ]]; then
+      check_ok "raw stream 文件可读"
+
+      local size1 size2
+      size1="$(wc -c < "$RAW_STREAM_FILE" 2>/dev/null || echo 0)"
+      sleep 1
+      size2="$(wc -c < "$RAW_STREAM_FILE" 2>/dev/null || echo 0)"
+
+      if [[ "$size2" -gt "$size1" ]]; then
+        check_ok "raw stream 文件在增长（实时链路正常写入）"
+      else
+        check_warn "raw stream 文件暂未增长（可能当前无请求，或网关未开启 raw stream）"
+        warned=1
+      fi
+    else
+      check_fail "raw stream 文件存在但不可读: $RAW_STREAM_FILE"
+      failed=1
+    fi
+  else
+    check_warn "raw stream 文件不存在: $RAW_STREAM_FILE"
+    echo "   建议：网关启用 OPENCLAW_RAW_STREAM=1 或 --raw-stream"
+    warned=1
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fsS "http://127.0.0.1:$PORT/api/config" >/dev/null 2>&1; then
+      check_ok "本机 API /api/config 可访问"
+    else
+      check_warn "本机 API /api/config 不可访问（端口/监听可能异常）"
+      warned=1
+    fi
+  else
+    check_warn "未找到 curl，跳过 API 连通性检测"
+    warned=1
+  fi
+
+  echo
+  if [[ "$failed" -eq 1 ]]; then
+    echo "doctor result: FAIL"
+    exit 1
+  elif [[ "$warned" -eq 1 ]]; then
+    echo "doctor result: WARN"
+    exit 0
+  else
+    echo "doctor result: OK"
+    exit 0
+  fi
 }
 
 latest_tag() {
@@ -173,6 +277,7 @@ claw-trace commands:
   restart            Restart service
   status             Show service status
   logs               Tail service logs
+  doctor             Health checks (process/files/api/raw-stream)
   version            Show installed version
   update [tag]       Update from GitHub release (default: latest)
   rollback           Roll back to latest local backup
@@ -188,6 +293,7 @@ case "$cmd" in
   restart) stop; start ;;
   status) status ;;
   logs) logs ;;
+  doctor) doctor ;;
   version) version ;;
   update) update "${1:-latest}" ;;
   rollback) rollback ;;
