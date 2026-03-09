@@ -8,6 +8,16 @@ const state = {
   sessionCache: new Map(),
   localFiles: new Map(),
   sourceModalOpen: false,
+  config: null,
+  raw: {
+    sourcePath: null,
+    eventSource: null,
+    connected: false,
+    paused: false,
+    filter: "",
+    events: [],
+    max: 300,
+  },
 };
 
 const elements = {
@@ -27,6 +37,12 @@ const elements = {
   sourceModal: document.querySelector("#sourceModal"),
   sourceModalContent: document.querySelector("#sourceModalContent"),
   sourceModalClose: document.querySelector("#sourceModalClose"),
+  rawMeta: document.querySelector("#rawMeta"),
+  rawStatus: document.querySelector("#rawStatus"),
+  rawFilter: document.querySelector("#rawFilter"),
+  rawPauseButton: document.querySelector("#rawPauseButton"),
+  rawClearButton: document.querySelector("#rawClearButton"),
+  rawEventList: document.querySelector("#rawEventList"),
 };
 
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
@@ -76,6 +92,182 @@ function initTheme() {
 function setStatus(message, tone = "info") {
   elements.statusBar.dataset.tone = tone;
   elements.statusBar.textContent = message;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function trimRawLine(line = "") {
+  if (line.length <= 280) return line;
+  return `${line.slice(0, 279)}…`;
+}
+
+function inferRawKind(entry) {
+  const parsed = entry?.parsed;
+  if (parsed && typeof parsed === "object") {
+    if (parsed.type) return String(parsed.type);
+    if (parsed.event) return String(parsed.event);
+    if (parsed.kind) return String(parsed.kind);
+  }
+
+  const line = String(entry?.line || "").toLowerCase();
+  if (line.includes("tool") && line.includes("call")) return "toolCall";
+  if (line.includes("tool") && line.includes("result")) return "toolResult";
+  if (line.includes("error")) return "error";
+  if (line.includes("assistant")) return "assistant";
+  if (line.includes("user")) return "user";
+  return "event";
+}
+
+function renderRawEvents() {
+  if (!elements.rawEventList) return;
+
+  const query = state.raw.filter.trim().toLowerCase();
+  const filtered = query
+    ? state.raw.events.filter((entry) => {
+        const text = `${entry.kind} ${entry.line}`.toLowerCase();
+        return text.includes(query);
+      })
+    : state.raw.events;
+
+  elements.rawEventList.innerHTML = "";
+
+  if (!filtered.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = query
+      ? "没有匹配当前过滤词的实时事件。"
+      : "实时流还没有事件。确认网关已开启 raw-stream 并正在处理请求。";
+    elements.rawEventList.appendChild(empty);
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const entry of filtered) {
+    const item = document.createElement("article");
+    item.className = "raw-item";
+
+    const head = document.createElement("div");
+    head.className = "raw-item-head";
+
+    const kind = document.createElement("span");
+    kind.className = "raw-kind";
+    kind.textContent = entry.kind;
+    head.appendChild(kind);
+
+    const time = document.createElement("span");
+    time.className = "raw-time";
+    time.textContent = formatAbsoluteTime(entry.ts);
+    head.appendChild(time);
+
+    item.appendChild(head);
+
+    const body = document.createElement("pre");
+    body.className = "raw-line";
+    body.textContent = trimRawLine(entry.line);
+    item.appendChild(body);
+
+    frag.appendChild(item);
+  }
+
+  elements.rawEventList.appendChild(frag);
+  elements.rawEventList.scrollTop = elements.rawEventList.scrollHeight;
+}
+
+function updateRawHeader() {
+  if (!elements.rawStatus) return;
+  elements.rawStatus.textContent = state.raw.connected
+    ? state.raw.paused
+      ? "已连接（暂停中）"
+      : "已连接（实时）"
+    : "未连接";
+
+  if (elements.rawPauseButton) {
+    elements.rawPauseButton.textContent = state.raw.paused ? "继续" : "暂停";
+  }
+
+  if (elements.rawMeta) {
+    elements.rawMeta.textContent = state.raw.sourcePath
+      ? `源文件：${state.raw.sourcePath}`
+      : "源文件：未知";
+  }
+}
+
+function pushRawEvent(entry) {
+  const normalized = {
+    ts: Number(entry?.ts || Date.now()),
+    line: String(entry?.line || ""),
+    parsed: entry?.parsed ?? null,
+  };
+  normalized.kind = inferRawKind(normalized);
+
+  state.raw.events.push(normalized);
+  if (state.raw.events.length > state.raw.max) {
+    state.raw.events.splice(0, state.raw.events.length - state.raw.max);
+  }
+
+  if (!state.raw.paused) {
+    renderRawEvents();
+  }
+}
+
+async function loadConfig() {
+  try {
+    const resp = await fetch("/api/config", { cache: "no-store" });
+    if (!resp.ok) throw new Error(`读取 /api/config 失败（${resp.status}）`);
+    state.config = await resp.json();
+    state.raw.sourcePath = state.config.rawStreamFile || null;
+    updateRawHeader();
+  } catch (error) {
+    setStatus(`读取服务配置失败：${error.message}`, "warn");
+  }
+}
+
+function connectRawStream() {
+  if (!window.EventSource) {
+    setStatus("浏览器不支持 EventSource，无法显示实时 raw stream。", "warn");
+    return;
+  }
+
+  const source = new EventSource("/api/raw-stream?replay=120");
+  state.raw.eventSource = source;
+
+  source.addEventListener("open", () => {
+    state.raw.connected = true;
+    updateRawHeader();
+  });
+
+  source.addEventListener("meta", (event) => {
+    try {
+      const payload = JSON.parse(event.data || "{}");
+      if (payload.rawStreamFile) {
+        state.raw.sourcePath = payload.rawStreamFile;
+      }
+      updateRawHeader();
+    } catch (_) {
+      // ignore
+    }
+  });
+
+  source.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data || "{}");
+      pushRawEvent(payload);
+    } catch (_) {
+      // ignore malformed chunks
+    }
+  };
+
+  source.onerror = () => {
+    state.raw.connected = false;
+    updateRawHeader();
+  };
 }
 
 function basename(filePath = "") {
@@ -1003,6 +1195,30 @@ elements.fileButton.addEventListener("click", () => {
 
 elements.fileInput.addEventListener("change", handleFileImport);
 
+if (elements.rawFilter) {
+  elements.rawFilter.addEventListener("input", (event) => {
+    state.raw.filter = event.target.value || "";
+    renderRawEvents();
+  });
+}
+
+if (elements.rawPauseButton) {
+  elements.rawPauseButton.addEventListener("click", () => {
+    state.raw.paused = !state.raw.paused;
+    updateRawHeader();
+    if (!state.raw.paused) {
+      renderRawEvents();
+    }
+  });
+}
+
+if (elements.rawClearButton) {
+  elements.rawClearButton.addEventListener("click", () => {
+    state.raw.events = [];
+    renderRawEvents();
+  });
+}
+
 if (elements.sourceModalClose) {
   elements.sourceModalClose.addEventListener("click", closeSourceModal);
 }
@@ -1022,4 +1238,8 @@ document.addEventListener("keydown", (event) => {
 });
 
 initTheme();
+updateRawHeader();
+renderRawEvents();
+loadConfig();
+connectRawStream();
 loadSessionsIndex();

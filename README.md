@@ -7,6 +7,12 @@
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
 
+## 新增能力（v1.0.11）
+
+- 在页面顶部新增 **Raw Stream 实时链路面板**（Live）
+- 支持 SSE 实时推送、关键词过滤、暂停/继续、清空
+- 与原有 Session/Terminal/Agentic timeline 同页融合
+
 ## 一键安装（推荐）
 
 ```bash
@@ -68,16 +74,26 @@ node server.js
 - `PORT`：端口（默认 `8787`）
 - `HOST`：监听地址（默认 `0.0.0.0`）
 - `SESSIONS_DIR`：session 数据目录（默认 `/root/.openclaw/agents/main/sessions`）
+- `RAW_STREAM_FILE`：raw stream 日志路径（默认 `~/.openclaw/logs/raw-stream.jsonl`）
+- `RAW_POLL_MS`：轮询间隔毫秒（默认 `700`）
 
 示例：
 
 ```bash
-HOST=0.0.0.0 PORT=8787 SESSIONS_DIR=/root/.openclaw/agents/main/sessions node server.js
+HOST=0.0.0.0 \
+PORT=8787 \
+SESSIONS_DIR=/root/.openclaw/agents/main/sessions \
+RAW_STREAM_FILE=/root/.openclaw/logs/raw-stream.jsonl \
+node server.js
 ```
+
+> 提示：要让 raw stream 文件持续有内容，OpenClaw 网关需启用 raw stream（如 `OPENCLAW_RAW_STREAM=1`）。
 
 ## API
 
+- `GET /api/config` -> 读取服务配置（含 raw stream 文件路径）
 - `GET /api/sessions` -> 读取 `sessions.json`
 - `GET /api/session-file?file=<session.jsonl>` -> 读取指定 `jsonl`
+- `GET /api/raw-stream?replay=120` -> SSE 实时流（先回放 recent，再持续推送）
 
 > 安全限制：仅允许读取 `sessions.json` 和形如 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jsonl` 的文件名。

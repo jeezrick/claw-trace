@@ -41,6 +41,23 @@
         正在初始化页面…
       </div>
 
+      <section class="raw-panel">
+        <div class="raw-panel-head">
+          <div>
+            <p class="panel-kicker">Live</p>
+            <h2>Raw Stream 实时链路</h2>
+            <p id="rawMeta" class="raw-meta">源文件：未知</p>
+          </div>
+          <div class="raw-actions">
+            <span id="rawStatus" class="panel-chip">未连接</span>
+            <input id="rawFilter" type="search" placeholder="过滤关键词：tool / error / session" />
+            <button id="rawPauseButton" class="ghost-button" type="button">暂停</button>
+            <button id="rawClearButton" class="ghost-button" type="button">清空</button>
+          </div>
+        </div>
+        <div id="rawEventList" class="raw-event-list"></div>
+      </section>
+
       <main class="workspace-grid">
         <section class="panel">
           <div class="panel-head">

@@ -206,6 +206,103 @@ details.expandable summary:focus-visible {
   background: rgba(255, 126, 107, 0.09);
 }
 
+.raw-panel {
+  margin-top: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at top right, rgba(136, 204, 255, 0.08), transparent 30%),
+    var(--panel);
+  box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(16px);
+}
+
+.raw-panel-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.raw-panel-head h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.raw-meta {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.raw-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.raw-actions input {
+  min-width: 260px;
+  max-width: 360px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: rgba(3, 9, 16, 0.6);
+}
+
+.raw-event-list {
+  max-height: 280px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.raw-item {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.raw-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.raw-kind {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border: 1px solid var(--line-strong);
+  color: var(--cyan);
+}
+
+.raw-time {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.raw-line {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--text) 92%, var(--muted) 8%);
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(280px, 360px) minmax(0, 1fr);
