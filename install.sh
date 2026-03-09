@@ -19,8 +19,24 @@ URL="https://github.com/$REPO/releases/download/$TAG/trace-service.tgz"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+retry_download() {
+  local url="$1"
+  local out="$2"
+  local tries=8
+  local i
+  for i in $(seq 1 "$tries"); do
+    if curl -fsSL "$url" -o "$out"; then
+      return 0
+    fi
+    echo "[claw-trace] download failed (try $i/$tries), retry in 5s..." >&2
+    sleep 5
+  done
+  return 1
+}
+
 echo "[claw-trace] downloading $URL"
-curl -fsSL "$URL" | tar -xz -C "$TMP_DIR"
+retry_download "$URL" "$TMP_DIR/trace-service.tgz"
+tar -xzf "$TMP_DIR/trace-service.tgz" -C "$TMP_DIR"
 
 SRC="$TMP_DIR/trace-service"
 if [[ ! -f "$SRC/claw-trace" ]]; then
