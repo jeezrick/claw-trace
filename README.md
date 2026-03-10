@@ -7,11 +7,14 @@
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
 
-## 新增能力（v1.0.11）
+## 新增能力（v1.0.12）
 
 - 在页面顶部新增 **Raw Stream 实时链路面板**（Live）
 - 支持 SSE 实时推送、关键词过滤、暂停/继续、清空
 - 与原有 Session/Terminal/Agentic timeline 同页融合
+- 实时面板默认仅展示“有价值事件”，过滤高频噪音：
+  - 隐藏 `assistant_text_stream`
+  - `assistant_thinking_stream` 仅保留 `thinking_end`
 
 ## 一键安装（推荐）
 
@@ -132,7 +135,10 @@ node server.js
 - 新增 Live 面板（与原有 3-step 视图同页）
 - EventSource 连接 `/api/raw-stream`
 - `meta` 事件用于显示当前 raw 文件来源
-- `message` 事件按行显示，支持：
+- `message` 事件先做“价值过滤”再显示：
+  - 默认隐藏 `assistant_text_stream`
+  - `assistant_thinking_stream` 仅显示 `thinking_end`
+- 展示层支持：
   - 关键词过滤
   - 暂停/继续渲染
   - 清空窗口

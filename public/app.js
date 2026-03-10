@@ -103,16 +103,16 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function trimRawLine(line = "") {
-  if (line.length <= 280) return line;
-  return `${line.slice(0, 279)}…`;
+function trimRawLine(line = "", maxLength = 280) {
+  if (line.length <= maxLength) return line;
+  return `${line.slice(0, Math.max(1, maxLength - 1))}…`;
 }
 
 function inferRawKind(entry) {
   const parsed = entry?.parsed;
   if (parsed && typeof parsed === "object") {
-    if (parsed.type) return String(parsed.type);
     if (parsed.event) return String(parsed.event);
+    if (parsed.type) return String(parsed.type);
     if (parsed.kind) return String(parsed.kind);
   }
 
@@ -123,6 +123,54 @@ function inferRawKind(entry) {
   if (line.includes("assistant")) return "assistant";
   if (line.includes("user")) return "user";
   return "event";
+}
+
+function isValuableRawEvent(entry) {
+  const parsed = entry?.parsed;
+  const kind = String(entry?.kind || "");
+
+  // 太高频、噪音最大：默认不展示（可通过源文件查看）
+  if (kind === "assistant_text_stream") {
+    return false;
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return true;
+  }
+
+  const evtType = String(parsed.evtType || "");
+
+  // thinking 仅保留阶段结束（避免逐 token 刷屏）
+  if (kind === "assistant_thinking_stream") {
+    return evtType === "thinking_end";
+  }
+
+  return true;
+}
+
+function rawPreviewText(entry) {
+  const parsed = entry?.parsed;
+  const kind = String(entry?.kind || "event");
+
+  if (!parsed || typeof parsed !== "object") {
+    return trimRawLine(String(entry?.line || ""));
+  }
+
+  if (kind === "assistant_message_end") {
+    const text = String(parsed.rawText || "").replace(/\s+/g, " ").trim();
+    return text ? `assistant end: ${trimRawLine(text, 220)}` : "assistant end";
+  }
+
+  if (kind === "assistant_thinking_stream") {
+    const content = String(parsed.content || "").replace(/\s+/g, " ").trim();
+    return content ? `thinking end: ${trimRawLine(content, 220)}` : "thinking end";
+  }
+
+  if (kind.includes("tool") || kind.includes("error")) {
+    return trimRawLine(String(entry?.line || ""), 240);
+  }
+
+  return trimRawLine(String(entry?.line || ""), 220);
 }
 
 function renderRawEvents() {
@@ -170,7 +218,7 @@ function renderRawEvents() {
 
     const body = document.createElement("pre");
     body.className = "raw-line";
-    body.textContent = trimRawLine(entry.line);
+    body.textContent = rawPreviewText(entry);
     item.appendChild(body);
 
     frag.appendChild(item);
@@ -206,6 +254,10 @@ function pushRawEvent(entry) {
     parsed: entry?.parsed ?? null,
   };
   normalized.kind = inferRawKind(normalized);
+
+  if (!isValuableRawEvent(normalized)) {
+    return;
+  }
 
   state.raw.events.push(normalized);
   if (state.raw.events.length > state.raw.max) {
