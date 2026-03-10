@@ -16,6 +16,7 @@ const state = {
     paused: false,
     filter: "",
     scope: "selected",
+    selectedWindow: null,
     enabledKinds: new Set([
       "assistant_message_end",
       "assistant_thinking_stream",
@@ -189,15 +190,61 @@ function currentSessionId() {
   return selected?.sessionId || null;
 }
 
+function parseTimestampMs(value) {
+  if (!value) return null;
+  const date = new Date(String(value));
+  const ms = date.getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function currentSelectedWindow() {
+  if (
+    state.selectedTerminalIndex == null ||
+    !state.terminalMessages[state.selectedTerminalIndex]
+  ) {
+    return null;
+  }
+
+  const currentTerminal = state.terminalMessages[state.selectedTerminalIndex];
+  const previousTerminal =
+    state.selectedTerminalIndex > 0
+      ? state.terminalMessages[state.selectedTerminalIndex - 1]
+      : null;
+
+  const currentTs = parseTimestampMs(currentTerminal.timestamp);
+  if (!currentTs) return null;
+
+  // 窗口放宽，兼容 clock 偏差和流式事件先后
+  const startTs = previousTerminal
+    ? parseTimestampMs(previousTerminal.timestamp)
+    : currentTs - 10 * 60 * 1000;
+
+  return {
+    startMs: (startTs || currentTs - 10 * 60 * 1000) - 30 * 1000,
+    endMs: currentTs + 60 * 1000,
+  };
+}
+
 function isNearBottom(el, threshold = 40) {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
 }
 
+function eventInSelectedWindow(entry) {
+  const w = state.raw.selectedWindow;
+  if (!w) return true;
+  const ts = Number(entry?.ts || 0);
+  return ts >= w.startMs && ts <= w.endMs;
+}
+
 function passesRawScope(group) {
   if (state.raw.scope === "all") return true;
+
   const sid = currentSessionId();
-  if (!sid) return true;
-  return group.sessionId === sid;
+  const hasSessionScopedEvents = group.events.some((e) => e.sessionId && e.sessionId === sid);
+  if (sid && hasSessionScopedEvents) return true;
+
+  // raw-stream 常见只有 runId 没 sessionId，退化为“选中终端消息时间窗”匹配
+  return group.events.some((e) => eventInSelectedWindow(e));
 }
 
 function entryKindEnabled(entry) {
@@ -332,6 +379,8 @@ function pushRawEvent(entry) {
     ts: Number(entry?.ts || Date.now()),
     line: String(entry?.line || ""),
     parsed: entry?.parsed ?? null,
+    runId: null,
+    sessionId: null,
   };
   normalized.kind = inferRawKind(normalized);
 
@@ -340,6 +389,9 @@ function pushRawEvent(entry) {
   }
 
   const parsed = normalized.parsed && typeof normalized.parsed === "object" ? normalized.parsed : {};
+  normalized.runId = parsed.runId || null;
+  normalized.sessionId = parsed.sessionId || null;
+
   const key = getRawGroupKey(normalized);
 
   let group = state.raw.groups.find((g) => g.key === key);
@@ -388,7 +440,7 @@ function connectRawStream() {
     return;
   }
 
-  const source = new EventSource("/api/raw-stream?replay=120");
+  const source = new EventSource("/api/raw-stream?replay=2000");
   state.raw.eventSource = source;
 
   source.addEventListener("open", () => {
@@ -1060,8 +1112,10 @@ function renderTerminalMessages() {
 
     button.addEventListener("click", () => {
       state.selectedTerminalIndex = index;
+      state.raw.selectedWindow = currentSelectedWindow();
       renderTerminalMessages();
       renderChain();
+      renderRawEvents();
     });
 
     elements.messageList.appendChild(button);
@@ -1230,6 +1284,7 @@ async function selectSession(sessionKey) {
 
   state.selectedSessionKey = sessionKey;
   state.selectedTerminalIndex = null;
+  state.raw.selectedWindow = null;
   renderSessions();
   renderSessionMeta(session);
   renderTerminalMessages();
@@ -1252,9 +1307,12 @@ async function selectSession(sessionKey) {
       ? state.terminalMessages.length - 1
       : null;
 
+    state.raw.selectedWindow = currentSelectedWindow();
+
     renderSessionMeta(session);
     renderTerminalMessages();
     renderChain();
+    renderRawEvents();
 
     setStatus(
       `已加载 ${session.sessionFile}，识别到 ${state.terminalMessages.length} 条终端消息。`,

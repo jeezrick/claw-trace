@@ -162,6 +162,56 @@ function pollRawStream() {
 
 setInterval(pollRawStream, RAW_POLL_MS).unref();
 
+function readRawHistory(limit = 1200, maxBytes = 2 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    fs.stat(RAW_STREAM_FILE, (statErr, stats) => {
+      if (statErr) {
+        if (statErr.code === 'ENOENT') return resolve([]);
+        return reject(statErr);
+      }
+
+      const size = Number(stats.size || 0);
+      const start = Math.max(0, size - maxBytes);
+      let text = '';
+
+      const stream = fs.createReadStream(RAW_STREAM_FILE, {
+        encoding: 'utf8',
+        start,
+      });
+
+      stream.on('data', (chunk) => {
+        text += chunk;
+      });
+
+      stream.on('error', reject);
+
+      stream.on('end', () => {
+        const lines = text.split(/\r?\n/).filter(Boolean);
+        const sliced = lines.slice(-limit);
+        const out = [];
+
+        for (const line of sliced) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          let parsed = null;
+          try {
+            parsed = JSON.parse(trimmed);
+          } catch (_) {
+            parsed = null;
+          }
+          out.push({
+            ts: Date.now(),
+            line: trimmed,
+            parsed,
+          });
+        }
+
+        resolve(out);
+      });
+    });
+  });
+}
+
 function handleApi(req, res, parsed) {
   if (parsed.pathname === '/api/config') {
     send(
@@ -228,7 +278,7 @@ function handleApi(req, res, parsed) {
       'X-Accel-Buffering': 'no',
     });
 
-    const replay = Math.max(0, Math.min(200, Number(parsed.query.replay || 80)));
+    const replay = Math.max(0, Math.min(5000, Number(parsed.query.replay || 80)));
 
     writeSse(
       res,
@@ -240,10 +290,23 @@ function handleApi(req, res, parsed) {
       'meta'
     );
 
-    if (replay > 0 && rawState.cache.length) {
-      const recent = rawState.cache.slice(-replay);
+    const sendRecent = (items) => {
+      if (!Array.isArray(items) || !items.length) return;
+      const recent = items.slice(-replay);
       for (const entry of recent) {
         writeSse(res, entry);
+      }
+    };
+
+    if (replay > 0) {
+      if (rawState.cache.length) {
+        sendRecent(rawState.cache);
+      } else {
+        readRawHistory(replay)
+          .then(sendRecent)
+          .catch(() => {
+            // ignore bootstrap read errors for stream consumers
+          });
       }
     }
 

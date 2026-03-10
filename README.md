@@ -102,7 +102,7 @@ node server.js
 - `GET /api/config` -> 读取服务配置（含 raw stream 文件路径）
 - `GET /api/sessions` -> 读取 `sessions.json`
 - `GET /api/session-file?file=<session.jsonl>` -> 读取指定 `jsonl`
-- `GET /api/raw-stream?replay=120` -> SSE 实时流（先回放 recent，再持续推送）
+- `GET /api/raw-stream?replay=2000` -> SSE 实时流（先回放历史文件/缓存，再持续推送）
 
 > 安全限制：仅允许读取 `sessions.json` 和形如 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jsonl` 的文件名。
 
@@ -146,6 +146,9 @@ node server.js
 - 范围筛选：
   - `当前选中 session`（默认）
   - `全部 session`
+- 选中 session/终端消息后，增加“时间窗兜底过滤”：
+  - 当 raw 事件缺失 `sessionId` 时，按当前终端消息区间匹配
+  - 避免看不到原本存在于 raw-stream 文件中的历史链路
 - 展示层支持：
   - 关键词过滤（kind/runId/sessionId）
   - 事件类型快速开关（assistant_end / thinking_end / toolCall / toolResult / error）
