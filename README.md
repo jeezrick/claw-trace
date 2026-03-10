@@ -6,6 +6,22 @@
 
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
+- `apps/server/` v2 Fastify + SQLite + zod 骨架
+- `apps/web/` v2 React + Vite + Zustand 骨架
+- `docs/adr/0001-v2-architecture.md` v2 架构 ADR / 迁移计划
+
+## v2 基础骨架（本分支）
+
+`refactor/v2-architecture` 分支新增了一个**不替换 v1** 的并行 v2 基础层：
+
+- v1 仍然使用现有 `server.js + public/` 路径
+- v2 新代码全部放在 `apps/server` 和 `apps/web`
+- 当前只提供架构骨架、SQLite 初始化、占位 API、SSE resume 契约、稳定三栏前端壳
+- 还**没有**开始把现有 session/raw-stream 数据正式迁移到 SQLite
+
+如果你要看推荐架构和迁移步骤，先读：
+
+- `docs/adr/0001-v2-architecture.md`
 
 ## 新增能力（v1.0.19）
 
@@ -90,6 +106,55 @@ node server.js
 ```
 
 默认监听：`0.0.0.0:8787`
+
+## 本地并行运行 v1 + v2
+
+先安装 workspace 依赖：
+
+```bash
+cd /root/code/claw-trace
+npm install
+```
+
+然后分 3 个终端运行：
+
+```bash
+# 终端 1：v1（保持现有路径）
+npm start
+```
+
+```bash
+# 终端 2：v2 backend
+npm run v2:server:dev
+```
+
+```bash
+# 终端 3：v2 frontend
+npm run v2:web:dev
+```
+
+默认端口：
+
+- v1: `http://127.0.0.1:8787`
+- v2 backend: `http://127.0.0.1:8790`
+- v2 frontend: `http://127.0.0.1:5174`
+
+说明：
+
+- v2 web 开发服务器会把 `/api` 代理到 v2 backend
+- v2 SQLite 默认文件：`apps/server/data/claw-trace-v2.sqlite`
+- v2 当前接口：
+  - `GET /api/v2/health`
+  - `GET /api/v2/sessions`
+  - `GET /api/v2/sessions/:sessionId/actions`
+  - `GET /api/v2/stream`
+
+如需构建：
+
+```bash
+npm run v2:server:build
+npm run v2:web:build
+```
 
 ## 环境变量
 

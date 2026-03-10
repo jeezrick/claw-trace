@@ -4,8 +4,16 @@
   "private": true,
   "description": "Session trace web service for OpenClaw",
   "main": "server.js",
+  "workspaces": [
+    "apps/server",
+    "apps/web"
+  ],
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "v2:server:dev": "npm run dev --workspace @claw-trace/server",
+    "v2:server:build": "npm run build --workspace @claw-trace/server",
+    "v2:web:dev": "npm run dev --workspace @claw-trace/web",
+    "v2:web:build": "npm run build --workspace @claw-trace/web"
   },
   "engines": {
     "node": ">=18"
