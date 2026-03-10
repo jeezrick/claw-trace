@@ -15,8 +15,10 @@ const state = {
     connected: false,
     paused: false,
     filter: "",
-    events: [],
-    max: 300,
+    scope: "selected",
+    groups: [],
+    maxGroups: 120,
+    maxEventsPerGroup: 60,
   },
 };
 
@@ -39,6 +41,7 @@ const elements = {
   sourceModalClose: document.querySelector("#sourceModalClose"),
   rawMeta: document.querySelector("#rawMeta"),
   rawStatus: document.querySelector("#rawStatus"),
+  rawScope: document.querySelector("#rawScope"),
   rawFilter: document.querySelector("#rawFilter"),
   rawPauseButton: document.querySelector("#rawPauseButton"),
   rawClearButton: document.querySelector("#rawClearButton"),
@@ -173,59 +176,109 @@ function rawPreviewText(entry) {
   return trimRawLine(String(entry?.line || ""), 220);
 }
 
+function currentSessionId() {
+  const selected = state.sessions.find((s) => s.key === state.selectedSessionKey);
+  return selected?.sessionId || null;
+}
+
+function isNearBottom(el, threshold = 40) {
+  return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+}
+
+function passesRawScope(group) {
+  if (state.raw.scope === "all") return true;
+  const sid = currentSessionId();
+  if (!sid) return true;
+  return group.sessionId === sid;
+}
+
+function groupMatchesQuery(group, query) {
+  if (!query) return true;
+  const headText = `${group.runId || ""} ${group.sessionId || ""}`.toLowerCase();
+  if (headText.includes(query)) return true;
+  return group.events.some((entry) => `${entry.kind} ${entry.line}`.toLowerCase().includes(query));
+}
+
 function renderRawEvents() {
   if (!elements.rawEventList) return;
 
   const query = state.raw.filter.trim().toLowerCase();
-  const filtered = query
-    ? state.raw.events.filter((entry) => {
-        const text = `${entry.kind} ${entry.line}`.toLowerCase();
-        return text.includes(query);
-      })
-    : state.raw.events;
+  const shouldStickBottom = isNearBottom(elements.rawEventList);
+  const previousScrollTop = elements.rawEventList.scrollTop;
+
+  const groups = state.raw.groups.filter((group) => passesRawScope(group) && groupMatchesQuery(group, query));
 
   elements.rawEventList.innerHTML = "";
 
-  if (!filtered.length) {
+  if (!groups.length) {
     const empty = document.createElement("div");
     empty.className = "empty-note";
     empty.textContent = query
       ? "没有匹配当前过滤词的实时事件。"
-      : "实时流还没有事件。确认网关已开启 raw-stream 并正在处理请求。";
+      : state.raw.scope === "selected"
+        ? "当前选中 session 暂无实时事件。可切换到“全部 session”查看。"
+        : "实时流还没有事件。确认网关已开启 raw-stream 并正在处理请求。";
     elements.rawEventList.appendChild(empty);
     return;
   }
 
   const frag = document.createDocumentFragment();
-  for (const entry of filtered) {
-    const item = document.createElement("article");
-    item.className = "raw-item";
+
+  for (const group of groups) {
+    const card = document.createElement("article");
+    card.className = "raw-group";
 
     const head = document.createElement("div");
-    head.className = "raw-item-head";
+    head.className = "raw-group-head";
 
-    const kind = document.createElement("span");
-    kind.className = "raw-kind";
-    kind.textContent = entry.kind;
-    head.appendChild(kind);
+    const title = document.createElement("span");
+    title.className = "raw-group-title";
+    title.textContent = `run ${truncateMiddle(group.runId || "-", 24)} · session ${truncateMiddle(group.sessionId || "-", 28)}`;
+    head.appendChild(title);
 
     const time = document.createElement("span");
     time.className = "raw-time";
-    time.textContent = formatAbsoluteTime(entry.ts);
+    time.textContent = formatAbsoluteTime(group.updatedAt);
     head.appendChild(time);
 
-    item.appendChild(head);
+    card.appendChild(head);
 
-    const body = document.createElement("pre");
-    body.className = "raw-line";
-    body.textContent = rawPreviewText(entry);
-    item.appendChild(body);
+    for (const entry of group.events) {
+      const item = document.createElement("article");
+      item.className = "raw-item";
 
-    frag.appendChild(item);
+      const itemHead = document.createElement("div");
+      itemHead.className = "raw-item-head";
+
+      const kind = document.createElement("span");
+      kind.className = "raw-kind";
+      kind.textContent = entry.kind;
+      itemHead.appendChild(kind);
+
+      const itemTime = document.createElement("span");
+      itemTime.className = "raw-time";
+      itemTime.textContent = formatAbsoluteTime(entry.ts);
+      itemHead.appendChild(itemTime);
+
+      item.appendChild(itemHead);
+
+      const body = document.createElement("pre");
+      body.className = "raw-line";
+      body.textContent = rawPreviewText(entry);
+      item.appendChild(body);
+
+      card.appendChild(item);
+    }
+
+    frag.appendChild(card);
   }
 
   elements.rawEventList.appendChild(frag);
-  elements.rawEventList.scrollTop = elements.rawEventList.scrollHeight;
+  if (shouldStickBottom && !state.raw.paused) {
+    elements.rawEventList.scrollTop = elements.rawEventList.scrollHeight;
+  } else {
+    elements.rawEventList.scrollTop = Math.min(previousScrollTop, elements.rawEventList.scrollHeight);
+  }
 }
 
 function updateRawHeader() {
@@ -247,6 +300,14 @@ function updateRawHeader() {
   }
 }
 
+function getRawGroupKey(entry) {
+  const parsed = entry?.parsed;
+  if (!parsed || typeof parsed !== "object") {
+    return "ungrouped";
+  }
+  return `${parsed.runId || "-"}::${parsed.sessionId || "-"}`;
+}
+
 function pushRawEvent(entry) {
   const normalized = {
     ts: Number(entry?.ts || Date.now()),
@@ -259,9 +320,30 @@ function pushRawEvent(entry) {
     return;
   }
 
-  state.raw.events.push(normalized);
-  if (state.raw.events.length > state.raw.max) {
-    state.raw.events.splice(0, state.raw.events.length - state.raw.max);
+  const parsed = normalized.parsed && typeof normalized.parsed === "object" ? normalized.parsed : {};
+  const key = getRawGroupKey(normalized);
+
+  let group = state.raw.groups.find((g) => g.key === key);
+  if (!group) {
+    group = {
+      key,
+      runId: parsed.runId || null,
+      sessionId: parsed.sessionId || null,
+      updatedAt: normalized.ts,
+      events: [],
+    };
+    state.raw.groups.push(group);
+  }
+
+  group.updatedAt = normalized.ts;
+  group.events.push(normalized);
+  if (group.events.length > state.raw.maxEventsPerGroup) {
+    group.events.splice(0, group.events.length - state.raw.maxEventsPerGroup);
+  }
+
+  state.raw.groups.sort((a, b) => b.updatedAt - a.updatedAt);
+  if (state.raw.groups.length > state.raw.maxGroups) {
+    state.raw.groups.splice(state.raw.maxGroups);
   }
 
   if (!state.raw.paused) {
@@ -1133,6 +1215,7 @@ async function selectSession(sessionKey) {
   renderSessionMeta(session);
   renderTerminalMessages();
   renderChain();
+  renderRawEvents();
 
   setStatus(`正在读取 ${session.sessionFile} ...`);
 
@@ -1247,6 +1330,13 @@ elements.fileButton.addEventListener("click", () => {
 
 elements.fileInput.addEventListener("change", handleFileImport);
 
+if (elements.rawScope) {
+  elements.rawScope.addEventListener("change", (event) => {
+    state.raw.scope = event.target.value || "selected";
+    renderRawEvents();
+  });
+}
+
 if (elements.rawFilter) {
   elements.rawFilter.addEventListener("input", (event) => {
     state.raw.filter = event.target.value || "";
@@ -1266,7 +1356,7 @@ if (elements.rawPauseButton) {
 
 if (elements.rawClearButton) {
   elements.rawClearButton.addEventListener("click", () => {
-    state.raw.events = [];
+    state.raw.groups = [];
     renderRawEvents();
   });
 }

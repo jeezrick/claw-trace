@@ -246,8 +246,9 @@ details.expandable summary:focus-visible {
   justify-content: flex-end;
 }
 
-.raw-actions input {
-  min-width: 260px;
+.raw-actions input,
+.raw-actions select {
+  min-width: 220px;
   max-width: 360px;
   padding: 9px 12px;
   border-radius: 999px;
@@ -264,11 +265,33 @@ details.expandable summary:focus-visible {
   padding-right: 4px;
 }
 
+.raw-group {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.raw-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.raw-group-title {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+}
+
 .raw-item {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
+  margin-top: 8px;
 }
 
 .raw-item-head {
