@@ -262,12 +262,136 @@ function groupMatchesQuery(group, query) {
   return visibleEvents.some((entry) => `${entry.kind} ${entry.line}`.toLowerCase().includes(query));
 }
 
+function buildSelectedSessionActionHistory() {
+  if (!state.selectedSessionEvents || !state.selectedSessionEvents.length) {
+    return [];
+  }
+
+  const allowedKinds = new Set([
+    "user",
+    "think",
+    "toolCall",
+    "toolResult",
+    "reply",
+    "assistantError",
+  ]);
+
+  const steps = buildChainSteps(state.selectedSessionEvents).filter((step) =>
+    allowedKinds.has(step.kind),
+  );
+
+  return steps.map((step) => ({
+    kind: step.kind,
+    label: step.label,
+    title: step.title,
+    body: step.body,
+    meta: step.meta,
+    isError: Boolean(step.isError),
+    ts: parseTimestampMs(step.timestamp) || Date.now(),
+  }));
+}
+
+function actionKindToRawKind(kind = "") {
+  if (kind === "toolCall") return "toolCall";
+  if (kind === "toolResult") return "toolResult";
+  if (kind === "assistantError") return "error";
+  if (kind === "reply") return "assistant_message_end";
+  if (kind === "think") return "assistant_thinking_stream";
+  return "user";
+}
+
+function detectActionHistoryStatus(actions) {
+  if (!actions.length) return "暂无动作";
+  const last = actions[actions.length - 1];
+  if (last.kind === "reply") return "已完成";
+  if (last.kind === "assistantError") return "执行失败";
+  if (last.kind === "toolCall" || last.kind === "think") return "执行中";
+  return "等待下一步";
+}
+
 function renderRawEvents() {
   if (!elements.rawEventList) return;
 
   const query = state.raw.filter.trim().toLowerCase();
   const shouldStickBottom = isNearBottom(elements.rawEventList);
   const previousScrollTop = elements.rawEventList.scrollTop;
+
+  // selected 模式优先展示“当前 session 的 action 历史”（不依赖 raw-stream 实时性）
+  if (state.raw.scope === "selected") {
+    const actions = buildSelectedSessionActionHistory();
+    const filteredActions = query
+      ? actions.filter((a) => `${a.kind} ${a.title} ${a.body}`.toLowerCase().includes(query))
+      : actions;
+
+    elements.rawEventList.innerHTML = "";
+
+    if (!filteredActions.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-note";
+      empty.textContent = query
+        ? "当前 session 的 action 历史中没有匹配关键词的内容。"
+        : "当前 session 暂无 action 历史。";
+      elements.rawEventList.appendChild(empty);
+      return;
+    }
+
+    const card = document.createElement("article");
+    card.className = "raw-group";
+
+    const head = document.createElement("div");
+    head.className = "raw-group-head";
+
+    const title = document.createElement("span");
+    title.className = "raw-group-title";
+    title.textContent = "当前 session action 历史";
+    head.appendChild(title);
+
+    const status = document.createElement("span");
+    status.className = "raw-time";
+    status.textContent = detectActionHistoryStatus(actions);
+    head.appendChild(status);
+
+    card.appendChild(head);
+
+    for (const action of filteredActions) {
+      const mappedKind = actionKindToRawKind(action.kind);
+      if (!state.raw.enabledKinds.has(mappedKind)) continue;
+
+      const item = document.createElement("article");
+      item.className = "raw-item";
+      if (action.isError) item.classList.add("error");
+
+      const itemHead = document.createElement("div");
+      itemHead.className = "raw-item-head";
+
+      const kind = document.createElement("span");
+      kind.className = "raw-kind";
+      kind.textContent = mappedKind;
+      itemHead.appendChild(kind);
+
+      const itemTime = document.createElement("span");
+      itemTime.className = "raw-time";
+      itemTime.textContent = formatAbsoluteTime(action.ts);
+      itemHead.appendChild(itemTime);
+
+      item.appendChild(itemHead);
+
+      const body = document.createElement("pre");
+      body.className = "raw-line";
+      body.textContent = `${action.title}\n${action.body}`;
+      item.appendChild(body);
+
+      card.appendChild(item);
+    }
+
+    elements.rawEventList.appendChild(card);
+    if (shouldStickBottom && !state.raw.paused) {
+      elements.rawEventList.scrollTop = elements.rawEventList.scrollHeight;
+    } else {
+      elements.rawEventList.scrollTop = Math.min(previousScrollTop, elements.rawEventList.scrollHeight);
+    }
+    return;
+  }
 
   const groups = state.raw.groups.filter((group) => passesRawScope(group) && groupMatchesQuery(group, query));
 
@@ -278,9 +402,7 @@ function renderRawEvents() {
     empty.className = "empty-note";
     empty.textContent = query
       ? "没有匹配当前过滤词的实时事件。"
-      : state.raw.scope === "selected"
-        ? "当前选中 session 暂无实时事件。可切换到“全部 session”查看。"
-        : "实时流还没有事件。确认网关已开启 raw-stream 并正在处理请求。";
+      : "实时流还没有事件。确认网关已开启 raw-stream 并正在处理请求。";
     elements.rawEventList.appendChild(empty);
     return;
   }
