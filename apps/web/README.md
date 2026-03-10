@@ -1,15 +1,14 @@
 # claw-trace v2 web
 
-React + Vite + TypeScript + Zustand 基础骨架。
+React + Vite + TypeScript + Zustand phase-1 frontend。
 
 ## 当前范围
 
-- App shell
-- Session list panel
-- Action history panel
-- Debug stream panel placeholder
-- Zustand store skeleton
-- API client / SSE client skeleton
+- 三栏布局：session list / action history / raw debug stream
+- session list 读取 `/api/v2/sessions`
+- action history 读取 `/api/v2/sessions/:sessionId/actions`
+- debug stream 使用 `/api/v2/stream` 的 SSE cursor replay
+- 保持全局 raw stream 连接，session 选择仅影响 action history 面板
 
 ## 启动
 

@@ -69,6 +69,9 @@ export function createDatabase(config: AppConfig): DatabaseClient {
 
     CREATE INDEX IF NOT EXISTS idx_raw_stream_entries_session_cursor
       ON raw_stream_entries(session_id, stream_cursor);
+
+    CREATE INDEX IF NOT EXISTS idx_raw_stream_entries_run_cursor
+      ON raw_stream_entries(run_id, stream_cursor);
   `);
 
   return db;

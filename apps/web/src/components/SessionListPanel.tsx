@@ -1,4 +1,4 @@
-import type { SessionSummary } from '../lib/api';
+import type { SessionMetadata, SessionSummary } from '../lib/api';
 import type { LoadState } from '../store/app-store';
 
 type SessionListPanelProps = {
@@ -16,6 +16,14 @@ function formatTime(value: number | null) {
   }
 
   return new Date(value).toLocaleString();
+}
+
+function getMetadata(metadata: SessionSummary['metadata']): SessionMetadata | null {
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+
+  return metadata as SessionMetadata;
 }
 
 export function SessionListPanel(props: SessionListPanelProps) {
@@ -39,29 +47,41 @@ export function SessionListPanel(props: SessionListPanelProps) {
 
       {props.sessions.length === 0 ? (
         <div className="empty-state">
-          <p>No sessions are loaded into the v2 store yet.</p>
+          <p>No sessions were ingested into the v2 store yet.</p>
           <p className="supporting-text">
-            This is expected until the ingestion pipeline starts writing into SQLite.
+            Check `sessions.json` availability or wait for the next ingest pass.
           </p>
         </div>
       ) : (
         <div className="session-list" role="list">
-          {props.sessions.map((session) => (
-            <button
-              key={session.id}
-              type="button"
-              className="session-card"
-              aria-pressed={props.selectedSessionId === session.id}
-              onClick={() => props.onSelect(session.id)}
-            >
-              <span className={`status-pill status-${session.status}`}>{session.status}</span>
-              <strong>{session.title ?? session.id}</strong>
-              <span className="supporting-text">Updated {formatTime(session.updatedAt)}</span>
-              <span className="session-summary">
-                {session.lastActionSummary ?? 'No derived action summary yet.'}
-              </span>
-            </button>
-          ))}
+          {props.sessions.map((session) => {
+            const metadata = getMetadata(session.metadata);
+
+            return (
+              <button
+                key={session.id}
+                type="button"
+                className="session-card"
+                aria-pressed={props.selectedSessionId === session.id}
+                onClick={() => props.onSelect(session.id)}
+              >
+                <div className="session-card-head">
+                  <span className={`status-pill status-${session.status}`}>{session.status}</span>
+                  <span className="supporting-text">
+                    {metadata?.provider ?? 'unknown'} / {metadata?.chatType ?? 'unknown'}
+                  </span>
+                </div>
+                <strong>{session.title ?? session.id}</strong>
+                <span className="supporting-text">Updated {formatTime(session.updatedAt)}</span>
+                <span className="session-summary">
+                  {session.lastActionSummary ?? 'No derived action summary yet.'}
+                </span>
+                {metadata?.firstUserText ? (
+                  <span className="supporting-text">{metadata.firstUserText}</span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

@@ -5,16 +5,18 @@ export const SessionStatusSchema = z.enum([
   'stalled',
   'failed',
   'completed',
+  'idle',
   'unknown',
 ]);
 
 export const ActionEventKindSchema = z.enum([
-  'input',
-  'thinking',
-  'tool_call',
-  'tool_result',
-  'assistant',
-  'error',
+  'user',
+  'think',
+  'toolCall',
+  'toolResult',
+  'reply',
+  'assistantError',
+  'assistantText',
   'system',
 ]);
 
@@ -76,3 +78,6 @@ export const StreamQuerySchema = z.object({
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 export type ActionHistoryItem = z.infer<typeof ActionHistoryItemSchema>;
 export type RawDebugEvent = z.infer<typeof RawDebugEventSchema>;
+export type SessionStatus = z.infer<typeof SessionStatusSchema>;
+export type ActionEventKind = z.infer<typeof ActionEventKindSchema>;
+export type EventSource = z.infer<typeof EventSourceSchema>;

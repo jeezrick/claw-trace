@@ -65,6 +65,7 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
       parsed.data.sessionId
     );
     let lastCursor = resumeCursor;
+    let pollTimer: NodeJS.Timeout | null = null;
 
     reply.hijack();
     reply.raw.writeHead(200, {
@@ -81,10 +82,10 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
     }
 
     writeSseEvent(reply.raw, 'ready', {
-      placeholder: true,
-      liveTailReady: false,
+      liveTailReady: true,
       sessionId: parsed.data.sessionId ?? null,
       resumeCursor: lastCursor,
+      latestCursor: deps.store.getLatestRawStreamCursor(),
     });
 
     const heartbeat = setInterval(() => {
@@ -94,8 +95,26 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
       });
     }, deps.config.sseHeartbeatMs);
 
+    pollTimer = setInterval(() => {
+      const events = deps.store.listRawStreamEntriesAfter(
+        lastCursor,
+        parsed.data.limit,
+        parsed.data.sessionId
+      );
+
+      if (events.length === 0) {
+        return;
+      }
+
+      lastCursor = sendBackfill(reply.raw, events);
+    }, deps.config.streamPollMs);
+    pollTimer.unref();
+
     request.raw.on('close', () => {
       clearInterval(heartbeat);
+      if (pollTimer) {
+        clearInterval(pollTimer);
+      }
       if (!reply.raw.writableEnded) {
         reply.raw.end();
       }

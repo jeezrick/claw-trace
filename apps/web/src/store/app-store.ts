@@ -84,11 +84,6 @@ export const useAppStore = create<AppState>((set) => ({
       actionHistory: [],
       actionHistoryState: 'idle',
       actionHistoryError: null,
-      debugEvents: [],
-      streamStatus: 'idle',
-      streamCursor: null,
-      streamError: null,
-      streamInfo: null,
     }),
 
   setActionHistoryLoading: () =>
@@ -132,12 +127,20 @@ export const useAppStore = create<AppState>((set) => ({
     }),
 
   appendDebugEvent: (event) =>
-    set((state) => ({
-      debugEvents: [...state.debugEvents, event].slice(-200),
-      streamStatus: 'open',
-      streamCursor: event.streamCursor,
-      streamError: null,
-    })),
+    set((state) => {
+      const lastCursor = state.debugEvents[state.debugEvents.length - 1]?.streamCursor ?? 0;
+
+      if (event.streamCursor <= lastCursor) {
+        return state;
+      }
+
+      return {
+        debugEvents: [...state.debugEvents, event].slice(-300),
+        streamStatus: 'open',
+        streamCursor: event.streamCursor,
+        streamError: null,
+      };
+    }),
 
   setStreamError: (message) =>
     set({

@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 
 import { SessionListQuerySchema } from '../domain/events';
+import type { IngestService } from '../ingest/service';
 import type { EventStore } from '../store/event-store';
 
 type SessionRouteDependencies = {
   store: EventStore;
+  ingest: IngestService;
 };
 
 export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDependencies) {
@@ -22,9 +24,11 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     return {
       items: deps.store.listSessions(parsed.data.limit),
       nextCursor: null,
-      placeholder: true,
-      ingestReady: false,
-      meta: deps.store.getMetrics(),
+      ingestReady: deps.ingest.getState().initialLoadCompleted,
+      meta: {
+        ...deps.store.getMetrics(),
+        ingest: deps.ingest.getState(),
+      },
     };
   });
 }

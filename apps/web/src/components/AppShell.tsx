@@ -13,7 +13,7 @@ export function AppShell(props: AppShellProps) {
       <header className="shell-header">
         <div>
           <p className="eyebrow">OpenClaw internal console</p>
-          <h1>claw-trace v2 foundation</h1>
+          <h1>claw-trace v2 phase 1</h1>
         </div>
         <div className="header-meta">
           <span className="meta-label">Selection</span>

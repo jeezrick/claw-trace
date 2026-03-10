@@ -18,6 +18,23 @@ function toErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
+function isUsefulRawEvent(event: RawDebugEvent) {
+  if (event.kind === 'assistant_text_stream') {
+    return false;
+  }
+
+  const payload =
+    event.payload && typeof event.payload === 'object'
+      ? (event.payload as Record<string, unknown>)
+      : null;
+
+  if (event.kind === 'assistant_thinking_stream') {
+    return payload?.evtType === 'thinking_end';
+  }
+
+  return true;
+}
+
 export default function App() {
   const sessions = useAppStore((state) => state.sessions);
   const sessionsState = useAppStore((state) => state.sessionsState);
@@ -52,7 +69,7 @@ export default function App() {
     setSessionsLoading();
 
     try {
-      const response = await listSessions();
+      const response = await listSessions(100);
       startTransition(() => {
         setSessions(response.items);
       });
@@ -76,7 +93,6 @@ export default function App() {
   useEffect(() => {
     if (!selectedSessionId) {
       resetActionHistory();
-      resetDebugStream();
       return;
     }
 
@@ -100,50 +116,51 @@ export default function App() {
         }
       });
 
+    return () => {
+      disposed = true;
+    };
+  }, [selectedSessionId]);
+
+  useEffect(() => {
     resetDebugStream();
     setStreamStatus('connecting');
 
-    const eventSource = createDebugEventSource({
-      sessionId: selectedSessionId,
+    const eventSource = createDebugEventSource();
+
+    eventSource.addEventListener('open', () => {
+      setStreamStatus('connecting');
     });
 
     eventSource.addEventListener('ready', (event) => {
-      if (disposed) {
-        return;
-      }
-
       startTransition(() => {
         setStreamReady(parseEventData<StreamReadyEvent>(event as MessageEvent<string>));
       });
     });
 
     eventSource.addEventListener('raw', (event) => {
-      if (disposed) {
+      const parsed = parseEventData<RawDebugEvent>(event as MessageEvent<string>);
+
+      if (!isUsefulRawEvent(parsed)) {
         return;
       }
 
       startTransition(() => {
-        appendDebugEvent(parseEventData<RawDebugEvent>(event as MessageEvent<string>));
+        appendDebugEvent(parsed);
       });
     });
 
     eventSource.addEventListener('heartbeat', () => {
-      if (!disposed) {
-        setStreamStatus('open');
-      }
+      setStreamStatus('open');
     });
 
     eventSource.onerror = () => {
-      if (!disposed) {
-        setStreamError('SSE connection dropped. Waiting for automatic retry.');
-      }
+      setStreamError('SSE connection dropped. EventSource will retry automatically.');
     };
 
     return () => {
-      disposed = true;
       eventSource.close();
     };
-  }, [selectedSessionId]);
+  }, []);
 
   return (
     <AppShell
@@ -175,6 +192,7 @@ export default function App() {
           cursor={streamCursor}
           error={streamError}
           info={streamInfo}
+          selectedSessionId={selectedSessionId}
         />
       }
     />

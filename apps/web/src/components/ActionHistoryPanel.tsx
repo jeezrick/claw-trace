@@ -16,6 +16,27 @@ function formatTime(value: number | null) {
   return new Date(value).toLocaleTimeString();
 }
 
+function labelForKind(kind: ActionHistoryItem['kind']) {
+  switch (kind) {
+    case 'user':
+      return 'user';
+    case 'think':
+      return 'think';
+    case 'toolCall':
+      return 'tool';
+    case 'toolResult':
+      return 'result';
+    case 'reply':
+      return 'reply';
+    case 'assistantError':
+      return 'error';
+    case 'assistantText':
+      return 'assistant';
+    default:
+      return kind;
+  }
+}
+
 export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
   return (
     <div className="panel-content">
@@ -50,7 +71,7 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
         <div className="empty-state">
           <p>No normalized actions are stored for this session yet.</p>
           <p className="supporting-text">
-            The panel is wired to the future SQLite read model and will stay mounted as data arrives.
+            This usually means the source transcript is empty or the latest ingest pass has not seen it yet.
           </p>
         </div>
       ) : null}
@@ -60,7 +81,12 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
           {props.items.map((item) => (
             <li key={item.eventId} className="history-item">
               <div className="history-head">
-                <strong>{item.title}</strong>
+                <div className="history-title-block">
+                  <span className={`status-pill status-${item.status ?? 'unknown'}`}>
+                    {labelForKind(item.kind)}
+                  </span>
+                  <strong>{item.title}</strong>
+                </div>
                 <span className="supporting-text">
                   #{item.sequence} · {item.kind} · {formatTime(item.startedAt)}
                 </span>

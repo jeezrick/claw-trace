@@ -1,13 +1,36 @@
-export type SessionStatus = 'running' | 'stalled' | 'failed' | 'completed' | 'unknown';
+export type SessionStatus =
+  | 'running'
+  | 'stalled'
+  | 'failed'
+  | 'completed'
+  | 'idle'
+  | 'unknown';
 export type ActionEventKind =
-  | 'input'
-  | 'thinking'
-  | 'tool_call'
-  | 'tool_result'
-  | 'assistant'
-  | 'error'
+  | 'user'
+  | 'think'
+  | 'toolCall'
+  | 'toolResult'
+  | 'reply'
+  | 'assistantError'
+  | 'assistantText'
   | 'system';
 export type EventSourceName = 'session_jsonl' | 'raw_stream' | 'system';
+
+export type SessionMetadata = {
+  sessionKey: string;
+  sessionFile: string;
+  provider: string;
+  chatType: string;
+  deliveryTarget: string;
+  firstUserText: string | null;
+  actionCount: number;
+  lastActionKind: ActionEventKind | null;
+  lastActionAt: number | null;
+  sourceUpdatedAt: number;
+  sessionFileExists: boolean;
+  systemSent: boolean;
+  abortedLastRun: boolean;
+};
 
 export type SessionSummary = {
   id: string;
@@ -16,7 +39,7 @@ export type SessionSummary = {
   startedAt: number | null;
   updatedAt: number;
   lastActionSummary: string | null;
-  metadata: unknown | null;
+  metadata: SessionMetadata | null;
 };
 
 export type ActionHistoryItem = {
@@ -45,22 +68,30 @@ export type RawDebugEvent = {
 };
 
 export type StreamReadyEvent = {
-  placeholder: boolean;
   liveTailReady: boolean;
   sessionId: string | null;
   resumeCursor: number;
+  latestCursor: number;
 };
 
 export type SessionListResponse = {
   items: SessionSummary[];
   nextCursor: string | null;
-  placeholder: boolean;
   ingestReady: boolean;
   meta: {
     sessionCount: number;
     actionEventCount: number;
     rawStreamCount: number;
     latestStreamCursor: number;
+    ingest: {
+      initialLoadCompleted: boolean;
+      lastSessionSyncAt: number | null;
+      lastRawSyncAt: number | null;
+      sessionSyncError: string | null;
+      rawSyncError: string | null;
+      sessionsIndexFile: string;
+      rawStreamFile: string;
+    };
   };
 };
 
@@ -68,7 +99,6 @@ export type ActionHistoryResponse = {
   sessionId: string;
   session: SessionSummary | null;
   items: ActionHistoryItem[];
-  placeholder: boolean;
   ingestReady: boolean;
 };
 
@@ -97,7 +127,7 @@ export function getActionHistory(sessionId: string, limit = 100) {
 export function createDebugEventSource(options: {
   sessionId?: string;
   cursor?: number;
-}) {
+} = {}) {
   const params = new URLSearchParams();
 
   if (options.sessionId) {

@@ -6,18 +6,36 @@
 
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
-- `apps/server/` v2 Fastify + SQLite + zod 骨架
-- `apps/web/` v2 React + Vite + Zustand 骨架
+- `apps/server/` v2 Fastify + SQLite + zod backend
+- `apps/web/` v2 React + Vite + Zustand frontend
 - `docs/adr/0001-v2-architecture.md` v2 架构 ADR / 迁移计划
 
-## v2 基础骨架（本分支）
+## v2 Phase 1（本分支）
 
-`refactor/v2-architecture` 分支新增了一个**不替换 v1** 的并行 v2 基础层：
+`refactor/v2-architecture` 分支当前提供一个**不替换 v1** 的并行 v2 phase-1 纵切面：
 
 - v1 仍然使用现有 `server.js + public/` 路径
 - v2 新代码全部放在 `apps/server` 和 `apps/web`
-- 当前只提供架构骨架、SQLite 初始化、占位 API、SSE resume 契约、稳定三栏前端壳
-- 还**没有**开始把现有 session/raw-stream 数据正式迁移到 SQLite
+- v2 backend 启动后会 ingest 当前 OpenClaw 数据源到 SQLite
+- v2 web 会实际消费 API，渲染 session list / action history / raw debug stream
+
+### 当前能力
+
+- `GET /api/v2/health`
+- `GET /api/v2/sessions`
+- `GET /api/v2/sessions/:sessionId/actions`
+- `GET /api/v2/stream`
+- sessions/action history 使用 best-effort 规范化
+  - 优先提取 `user / think / toolCall / toolResult / reply / assistantError`
+- session status 使用 best-effort 推断
+  - `running / stalled / failed / completed / idle`
+- raw stream 先落 SQLite，再通过 cursor-based SSE replay 给前端
+
+### 当前边界
+
+- phase 1 只做稳定可读 slice，不追求完整建模
+- raw stream 中很多事件当前仍然只有 `runId`，并不总能回填 `sessionId`
+- session ingest 目前是定时重建 read model；后续 phase 2 再做更细粒度增量
 
 如果你要看推荐架构和迁移步骤，先读：
 
@@ -143,6 +161,7 @@ npm run v2:web:dev
 
 - v2 web 开发服务器会把 `/api` 代理到 v2 backend
 - v2 SQLite 默认文件：`apps/server/data/claw-trace-v2.sqlite`
+- v2 backend 启动时会先执行一次初始 ingest，然后按轮询周期刷新 sessions/raw-stream
 - v2 当前接口：
   - `GET /api/v2/health`
   - `GET /api/v2/sessions`
@@ -155,6 +174,11 @@ npm run v2:web:dev
 npm run v2:server:build
 npm run v2:web:build
 ```
+
+验证时可以直接打开：
+
+- v2 backend health: `http://127.0.0.1:8790/api/v2/health`
+- v2 frontend: `http://127.0.0.1:5174`
 
 ## 环境变量
 
@@ -175,6 +199,19 @@ node server.js
 ```
 
 > 提示：要让 raw stream 文件持续有内容，OpenClaw 网关需启用 raw stream（如 `OPENCLAW_RAW_STREAM=1`）。
+
+### v2 环境变量
+
+- `HOST`：v2 backend 监听地址，默认 `127.0.0.1`
+- `PORT`：v2 backend 端口，默认 `8790`
+- `DATABASE_FILE`：SQLite 文件，默认 `apps/server/data/claw-trace-v2.sqlite`
+- `SESSIONS_DIR`：session 目录，默认 `/root/.openclaw/agents/main/sessions`
+- `SESSIONS_INDEX_FILE`：session 索引文件，默认 `<SESSIONS_DIR>/sessions.json`
+- `RAW_STREAM_FILE`：raw stream 文件，默认 `~/.openclaw/logs/raw-stream.jsonl`
+- `INGEST_POLL_MS`：session/raw ingest 轮询间隔，默认 `3000`
+- `STREAM_POLL_MS`：SSE 对 DB 的轮询间隔，默认 `1000`
+- `SESSION_STALL_MS`：session 判定 stalled 的阈值，默认 `300000`
+- `SSE_HEARTBEAT_MS`：SSE heartbeat 间隔，默认 `15000`
 
 ## API
 

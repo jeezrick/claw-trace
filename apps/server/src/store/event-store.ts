@@ -1,9 +1,44 @@
 import type {
   ActionHistoryItem,
   RawDebugEvent,
+  SessionStatus,
   SessionSummary,
 } from '../domain/events';
 import type { DatabaseClient } from '../db/sqlite';
+
+export type SessionWriteInput = {
+  id: string;
+  title: string | null;
+  status: SessionStatus;
+  startedAt: number | null;
+  updatedAt: number;
+  lastActionSummary: string | null;
+  metadata: unknown | null;
+};
+
+export type ActionWriteInput = {
+  id: string;
+  sessionId: string;
+  sequence: number;
+  kind: ActionHistoryItem['kind'];
+  status: ActionHistoryItem['status'];
+  title: string;
+  summary: string | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  cursor: number | null;
+  payload: unknown;
+};
+
+export type RawStreamWriteInput = {
+  eventId: string;
+  sessionId: string | null;
+  runId: string | null;
+  source: RawDebugEvent['source'];
+  kind: string;
+  eventTs: number;
+  payload: unknown;
+};
 
 type SessionRow = {
   id: string;
@@ -50,6 +85,10 @@ function parseJson(value: string | null): unknown | null {
   } catch {
     return value;
   }
+}
+
+function serializeJson(value: unknown): string {
+  return JSON.stringify(value ?? null);
 }
 
 function mapSessionRow(row: SessionRow): SessionSummary {
@@ -157,6 +196,11 @@ export function createEventStore(db: DatabaseClient) {
     LIMIT ?
   `);
 
+  const latestRawStreamCursorStatement = db.prepare(`
+    SELECT COALESCE(MAX(stream_cursor), 0) AS latestCursor
+    FROM raw_stream_entries
+  `);
+
   const metricsStatement = db.prepare(`
     SELECT
       (SELECT COUNT(*) FROM sessions) AS sessionCount,
@@ -164,6 +208,151 @@ export function createEventStore(db: DatabaseClient) {
       (SELECT COUNT(*) FROM raw_stream_entries) AS rawStreamCount,
       (SELECT COALESCE(MAX(stream_cursor), 0) FROM raw_stream_entries) AS latestStreamCursor
   `);
+
+  const insertSessionStatement = db.prepare(`
+    INSERT INTO sessions (
+      id,
+      title,
+      status,
+      started_at,
+      updated_at,
+      last_action_summary,
+      metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      status = excluded.status,
+      started_at = excluded.started_at,
+      updated_at = excluded.updated_at,
+      last_action_summary = excluded.last_action_summary,
+      metadata_json = excluded.metadata_json
+  `);
+
+  const deleteAllSessionsStatement = db.prepare(`
+    DELETE FROM sessions
+  `);
+
+  const deleteActionEventsBySessionStatement = db.prepare(`
+    DELETE FROM action_events
+    WHERE session_id = ?
+  `);
+
+  const insertActionEventStatement = db.prepare(`
+    INSERT INTO action_events (
+      id,
+      session_id,
+      sequence,
+      kind,
+      status,
+      title,
+      summary,
+      started_at,
+      ended_at,
+      cursor,
+      payload_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      session_id = excluded.session_id,
+      sequence = excluded.sequence,
+      kind = excluded.kind,
+      status = excluded.status,
+      title = excluded.title,
+      summary = excluded.summary,
+      started_at = excluded.started_at,
+      ended_at = excluded.ended_at,
+      cursor = excluded.cursor,
+      payload_json = excluded.payload_json
+  `);
+
+  const insertRawStreamEntryStatement = db.prepare(`
+    INSERT OR IGNORE INTO raw_stream_entries (
+      event_id,
+      session_id,
+      run_id,
+      source,
+      kind,
+      event_ts,
+      payload_json,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const getIngestCursorStatement = db.prepare(`
+    SELECT cursor
+    FROM ingest_cursors
+    WHERE name = ?
+  `);
+
+  const upsertIngestCursorStatement = db.prepare(`
+    INSERT INTO ingest_cursors (name, cursor, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      cursor = excluded.cursor,
+      updated_at = excluded.updated_at
+  `);
+
+  const replaceSessionsAndActionsTransaction = db.transaction(
+    (sessions: SessionWriteInput[], actions: ActionWriteInput[]) => {
+      if (sessions.length > 0) {
+        const placeholders = sessions.map(() => '?').join(', ');
+        db.prepare(`DELETE FROM sessions WHERE id NOT IN (${placeholders})`).run(
+          ...sessions.map((session) => session.id)
+        );
+      } else {
+        deleteAllSessionsStatement.run();
+      }
+
+      for (const session of sessions) {
+        insertSessionStatement.run(
+          session.id,
+          session.title,
+          session.status,
+          session.startedAt,
+          session.updatedAt,
+          session.lastActionSummary,
+          serializeJson(session.metadata)
+        );
+        deleteActionEventsBySessionStatement.run(session.id);
+      }
+
+      for (const action of actions) {
+        insertActionEventStatement.run(
+          action.id,
+          action.sessionId,
+          action.sequence,
+          action.kind,
+          action.status,
+          action.title,
+          action.summary,
+          action.startedAt,
+          action.endedAt,
+          action.cursor,
+          serializeJson(action.payload)
+        );
+      }
+    }
+  );
+
+  const appendRawStreamEntriesTransaction = db.transaction((entries: RawStreamWriteInput[]) => {
+    let inserted = 0;
+
+    for (const entry of entries) {
+      const result = insertRawStreamEntryStatement.run(
+        entry.eventId,
+        entry.sessionId,
+        entry.runId,
+        entry.source,
+        entry.kind,
+        entry.eventTs,
+        serializeJson(entry.payload),
+        Date.now()
+      );
+
+      inserted += result.changes;
+    }
+
+    return inserted;
+  });
 
   return {
     listSessions(limit: number): SessionSummary[] {
@@ -188,6 +377,32 @@ export function createEventStore(db: DatabaseClient) {
       return (
         listRawStreamEntriesStatement.all(cursor, sessionId ?? null, sessionId ?? null, limit) as RawStreamRow[]
       ).map(mapRawStreamRow);
+    },
+
+    getLatestRawStreamCursor(): number {
+      const row = latestRawStreamCursorStatement.get() as { latestCursor: number };
+      return row.latestCursor;
+    },
+
+    replaceSessionsAndActions(sessions: SessionWriteInput[], actions: ActionWriteInput[]) {
+      replaceSessionsAndActionsTransaction(sessions, actions);
+    },
+
+    appendRawStreamEntries(entries: RawStreamWriteInput[]): number {
+      if (entries.length === 0) {
+        return 0;
+      }
+
+      return appendRawStreamEntriesTransaction(entries);
+    },
+
+    getIngestCursor(name: string): string | null {
+      const row = getIngestCursorStatement.get(name) as { cursor: string } | undefined;
+      return row?.cursor ?? null;
+    },
+
+    setIngestCursor(name: string, cursor: string) {
+      upsertIngestCursorStatement.run(name, cursor, Date.now());
     },
 
     getMetrics(): {

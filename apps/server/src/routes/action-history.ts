@@ -35,8 +35,7 @@ export function registerActionHistoryRoutes(
       sessionId: params.data.sessionId,
       session,
       items: deps.store.listActionHistory(params.data.sessionId, query.data.limit),
-      placeholder: true,
-      ingestReady: false,
+      ingestReady: true,
     };
   });
 }

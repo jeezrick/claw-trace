@@ -7,10 +7,36 @@ type DebugStreamPanelProps = {
   cursor: number | null;
   error: string | null;
   info: StreamReadyEvent | null;
+  selectedSessionId: string | null;
 };
 
 function formatJson(value: unknown) {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value, null, 2) ?? String(value);
+}
+
+function previewEvent(event: RawDebugEvent) {
+  const payload =
+    event.payload && typeof event.payload === 'object'
+      ? (event.payload as Record<string, unknown>)
+      : null;
+
+  if (event.kind === 'assistant_message_end') {
+    return typeof payload?.rawText === 'string' && payload.rawText
+      ? payload.rawText
+      : 'assistant_message_end';
+  }
+
+  if (event.kind === 'assistant_thinking_stream') {
+    return typeof payload?.content === 'string' && payload.content
+      ? payload.content
+      : 'assistant_thinking_stream';
+  }
+
+  if (typeof payload?.rawLine === 'string' && payload.rawLine) {
+    return payload.rawLine;
+  }
+
+  return formatJson(event.payload);
 }
 
 export function DebugStreamPanel(props: DebugStreamPanelProps) {
@@ -26,18 +52,17 @@ export function DebugStreamPanel(props: DebugStreamPanelProps) {
 
       <div className="supporting-block">
         <span className="supporting-text">Cursor {props.cursor ?? 0}</span>
-        <span className="supporting-text">
-          {props.info?.liveTailReady ? 'Live tail enabled' : 'Placeholder stream contract only'}
-        </span>
+        <span className="supporting-text">Latest {props.info?.latestCursor ?? props.cursor ?? 0}</span>
+        <span className="supporting-text">Selected session {props.selectedSessionId ?? 'none'}</span>
       </div>
 
       {props.error ? <p className="error-text">{props.error}</p> : null}
 
       {props.events.length === 0 ? (
         <div className="empty-state">
-          <p>No raw debug events have been persisted for this selection yet.</p>
+          <p>No raw debug events have been replayed yet.</p>
           <p className="supporting-text">
-            The panel already uses the v2 SSE route and resume cursor contract.
+            This panel follows the global raw stream and resumes from the last DB cursor.
           </p>
         </div>
       ) : (
@@ -53,7 +78,7 @@ export function DebugStreamPanel(props: DebugStreamPanelProps) {
               <span className="supporting-text">
                 session {event.sessionId ?? 'n/a'} · run {event.runId ?? 'n/a'}
               </span>
-              <pre className="payload-block">{formatJson(event.payload)}</pre>
+              <pre className="payload-block">{previewEvent(event)}</pre>
             </article>
           ))}
         </div>

@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 
 import { loadConfig, type AppConfig } from './config';
 import { createDatabase } from './db/sqlite';
+import { createIngestService } from './ingest/service';
 import { registerActionHistoryRoutes } from './routes/action-history';
 import { registerHealthRoutes } from './routes/health';
 import { registerSessionRoutes } from './routes/sessions';
@@ -20,13 +21,17 @@ export async function buildServer(config: AppConfig = loadConfig()) {
 
   const db = createDatabase(config);
   const store = createEventStore(db);
+  const ingest = createIngestService(config, store);
 
-  registerHealthRoutes(app, { config, store });
-  registerSessionRoutes(app, { store });
+  ingest.start();
+
+  registerHealthRoutes(app, { config, store, ingest });
+  registerSessionRoutes(app, { store, ingest });
   registerActionHistoryRoutes(app, { store });
   registerStreamRoutes(app, { config, store });
 
   app.addHook('onClose', async () => {
+    ingest.stop();
     db.close();
   });
 
