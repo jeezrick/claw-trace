@@ -7,7 +7,7 @@
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
 
-## 新增能力（v1.0.14）
+## 新增能力（v1.0.15）
 
 - 在页面顶部新增 **Raw Stream 实时链路面板**（Live）
 - 支持 SSE 实时推送、关键词过滤、暂停/继续、清空
@@ -19,6 +19,10 @@
 - 新增范围切换：`当前选中 session` / `全部 session`
 - 新增事件类型快速开关（assistant_end / thinking_end / toolCall / toolResult / error）
 - 修复滚动行为：用户滚动查看历史时不再被强制跳到底部
+- 选中 session 后支持“历史回放 + 实时追加”连续查看：
+  - SSE 初次连接回放提升到 `replay=2000`
+  - 服务端在内存缓存为空时可从 raw 文件补读历史并回放
+  - `selected` 范围下增加时间窗兜底匹配（sessionId 缺失时也能看见对应链路）
 
 ## 一键安装（推荐）
 
