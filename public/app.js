@@ -1495,11 +1495,20 @@ function renderChain() {
   }
 }
 
-async function selectSession(sessionKey) {
+async function selectSession(sessionKey, options = {}) {
   const session = state.sessions.find((item) => item.key === sessionKey);
   if (!session) {
     return;
   }
+
+  const { preserveTerminalSelection = false, silent = false } = options;
+
+  const previousTerminal =
+    preserveTerminalSelection &&
+    state.selectedTerminalIndex != null &&
+    state.terminalMessages[state.selectedTerminalIndex]
+      ? state.terminalMessages[state.selectedTerminalIndex]
+      : null;
 
   state.selectedSessionKey = sessionKey;
   state.selectedTerminalIndex = null;
@@ -1511,7 +1520,9 @@ async function selectSession(sessionKey) {
   renderChain();
   renderRawEvents();
 
-  setStatus(`正在读取 ${session.sessionFile} ...`);
+  if (!silent) {
+    setStatus(`正在读取 ${session.sessionFile} ...`);
+  }
 
   try {
     let events = state.sessionCache.get(session.sessionId);
@@ -1523,9 +1534,22 @@ async function selectSession(sessionKey) {
 
     state.selectedSessionEvents = events;
     state.terminalMessages = buildTerminalMessages(events);
-    state.selectedTerminalIndex = state.terminalMessages.length
-      ? state.terminalMessages.length - 1
-      : null;
+
+    if (previousTerminal && state.terminalMessages.length) {
+      const matchedIndex = state.terminalMessages.findIndex(
+        (item) =>
+          item.ordinal === previousTerminal.ordinal &&
+          item.timestamp === previousTerminal.timestamp,
+      );
+      state.selectedTerminalIndex =
+        matchedIndex >= 0
+          ? matchedIndex
+          : Math.min(state.terminalMessages.length - 1, state.selectedTerminalIndex ?? 0);
+    } else {
+      state.selectedTerminalIndex = state.terminalMessages.length
+        ? state.terminalMessages.length - 1
+        : null;
+    }
 
     state.raw.selectedWindow = currentSelectedWindow();
 
@@ -1534,9 +1558,11 @@ async function selectSession(sessionKey) {
     renderChain();
     renderRawEvents();
 
-    setStatus(
-      `已加载 ${session.sessionFile}，识别到 ${state.terminalMessages.length} 条终端消息。`,
-    );
+    if (!silent) {
+      setStatus(
+        `已加载 ${session.sessionFile}，识别到 ${state.terminalMessages.length} 条终端消息。`,
+      );
+    }
   } catch (error) {
     state.selectedSessionEvents = [];
     state.terminalMessages = [];
@@ -1564,7 +1590,10 @@ async function loadSessionsIndex() {
         state.sessions.some((s) => s.key === state.selectedSessionKey)
           ? state.selectedSessionKey
           : state.sessions[0].key;
-      await selectSession(preferred);
+      await selectSession(preferred, {
+        preserveTerminalSelection: true,
+        silent: true,
+      });
     } else {
       renderSessionMeta(null);
       renderTerminalMessages();

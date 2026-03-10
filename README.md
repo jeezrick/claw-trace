@@ -7,7 +7,7 @@
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
 
-## 新增能力（v1.0.18）
+## 新增能力（v1.0.19）
 
 - 在页面顶部新增 **Raw Stream 实时链路面板**（Live）
 - 支持 SSE 实时推送、关键词过滤、暂停/继续、清空
@@ -30,6 +30,9 @@
   - SSE 断线自动重连（指数退避）
   - UI 状态持久化（session / scope / filter / kinds / paused）
   - 周期性自动刷新 sessions（15s）并保持当前选中 session
+- 修复自动刷新“抢焦点”问题
+  - 自动刷新时不再强制跳到最新终端消息
+  - 若用户已选中某条终端消息，刷新后尽量保持同一条
 
 ## 一键安装（推荐）
 
