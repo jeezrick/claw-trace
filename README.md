@@ -7,7 +7,7 @@
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
 
-## 新增能力（v1.0.13）
+## 新增能力（v1.0.14）
 
 - 在页面顶部新增 **Raw Stream 实时链路面板**（Live）
 - 支持 SSE 实时推送、关键词过滤、暂停/继续、清空
@@ -17,6 +17,7 @@
   - `assistant_thinking_stream` 仅保留 `thinking_end`
 - 新增按 `runId + sessionId` 聚合显示，避免所有 session 混在一起
 - 新增范围切换：`当前选中 session` / `全部 session`
+- 新增事件类型快速开关（assistant_end / thinking_end / toolCall / toolResult / error）
 - 修复滚动行为：用户滚动查看历史时不再被强制跳到底部
 
 ## 一键安装（推荐）
@@ -147,6 +148,7 @@ node server.js
   - `全部 session`
 - 展示层支持：
   - 关键词过滤（kind/runId/sessionId）
+  - 事件类型快速开关（assistant_end / thinking_end / toolCall / toolResult / error）
   - 暂停/继续渲染
   - 清空窗口
 - 滚动策略：仅当视图接近底部时自动跟随；用户向上翻历史时保持当前位置

@@ -16,6 +16,13 @@ const state = {
     paused: false,
     filter: "",
     scope: "selected",
+    enabledKinds: new Set([
+      "assistant_message_end",
+      "assistant_thinking_stream",
+      "toolCall",
+      "toolResult",
+      "error",
+    ]),
     groups: [],
     maxGroups: 120,
     maxEventsPerGroup: 60,
@@ -45,6 +52,7 @@ const elements = {
   rawFilter: document.querySelector("#rawFilter"),
   rawPauseButton: document.querySelector("#rawPauseButton"),
   rawClearButton: document.querySelector("#rawClearButton"),
+  rawKindFilters: document.querySelector("#rawKindFilters"),
   rawEventList: document.querySelector("#rawEventList"),
 };
 
@@ -192,11 +200,19 @@ function passesRawScope(group) {
   return group.sessionId === sid;
 }
 
+function entryKindEnabled(entry) {
+  const kind = String(entry?.kind || "");
+  return state.raw.enabledKinds.has(kind);
+}
+
 function groupMatchesQuery(group, query) {
+  const visibleEvents = group.events.filter((entry) => entryKindEnabled(entry));
+  if (!visibleEvents.length) return false;
+
   if (!query) return true;
   const headText = `${group.runId || ""} ${group.sessionId || ""}`.toLowerCase();
   if (headText.includes(query)) return true;
-  return group.events.some((entry) => `${entry.kind} ${entry.line}`.toLowerCase().includes(query));
+  return visibleEvents.some((entry) => `${entry.kind} ${entry.line}`.toLowerCase().includes(query));
 }
 
 function renderRawEvents() {
@@ -225,6 +241,9 @@ function renderRawEvents() {
   const frag = document.createDocumentFragment();
 
   for (const group of groups) {
+    const visibleEvents = group.events.filter((entry) => entryKindEnabled(entry));
+    if (!visibleEvents.length) continue;
+
     const card = document.createElement("article");
     card.className = "raw-group";
 
@@ -243,7 +262,7 @@ function renderRawEvents() {
 
     card.appendChild(head);
 
-    for (const entry of group.events) {
+    for (const entry of visibleEvents) {
       const item = document.createElement("article");
       item.className = "raw-item";
 
@@ -1329,6 +1348,26 @@ elements.fileButton.addEventListener("click", () => {
 });
 
 elements.fileInput.addEventListener("change", handleFileImport);
+
+if (elements.rawKindFilters) {
+  elements.rawKindFilters.addEventListener("click", (event) => {
+    const button = event.target.closest(".raw-kind-toggle");
+    if (!button) return;
+
+    const kind = button.dataset.kind;
+    if (!kind) return;
+
+    if (state.raw.enabledKinds.has(kind)) {
+      state.raw.enabledKinds.delete(kind);
+      button.classList.remove("active");
+    } else {
+      state.raw.enabledKinds.add(kind);
+      button.classList.add("active");
+    }
+
+    renderRawEvents();
+  });
+}
 
 if (elements.rawScope) {
   elements.rawScope.addEventListener("change", (event) => {

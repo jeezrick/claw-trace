@@ -257,6 +257,29 @@ details.expandable summary:focus-visible {
   background: rgba(3, 9, 16, 0.6);
 }
 
+.raw-kind-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.raw-kind-toggle {
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.raw-kind-toggle.active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--cyan) 58%, var(--line));
+  background: color-mix(in srgb, var(--cyan) 14%, transparent 86%);
+}
+
 .raw-event-list {
   max-height: 280px;
   overflow: auto;
