@@ -27,6 +27,7 @@ const state = {
     groups: [],
     maxGroups: 120,
     maxEventsPerGroup: 60,
+    reconnectAttempt: 0,
   },
 };
 
@@ -68,6 +69,7 @@ const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
 });
 
 const THEME_KEY = "claw-trace-theme";
+const UI_STATE_KEY = "claw-trace-ui-state-v1";
 
 function applyTheme(theme) {
   const target = theme === "light" ? "light" : "dark";
@@ -104,6 +106,76 @@ function initTheme() {
 function setStatus(message, tone = "info") {
   elements.statusBar.dataset.tone = tone;
   elements.statusBar.textContent = message;
+}
+
+function saveUiState() {
+  try {
+    const payload = {
+      selectedSessionKey: state.selectedSessionKey,
+      searchQuery: state.searchQuery,
+      rawScope: state.raw.scope,
+      rawFilter: state.raw.filter,
+      rawPaused: state.raw.paused,
+      rawEnabledKinds: Array.from(state.raw.enabledKinds || []),
+    };
+    localStorage.setItem(UI_STATE_KEY, JSON.stringify(payload));
+  } catch (_) {
+    // ignore storage errors
+  }
+}
+
+function applyUiStateToControls() {
+  if (elements.sessionSearch) {
+    elements.sessionSearch.value = state.searchQuery || "";
+  }
+  if (elements.rawScope) {
+    elements.rawScope.value = state.raw.scope || "selected";
+  }
+  if (elements.rawFilter) {
+    elements.rawFilter.value = state.raw.filter || "";
+  }
+  if (elements.rawKindFilters) {
+    const buttons = elements.rawKindFilters.querySelectorAll(".raw-kind-toggle");
+    for (const btn of buttons) {
+      const kind = btn.dataset.kind;
+      if (!kind) continue;
+      if (state.raw.enabledKinds.has(kind)) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    }
+  }
+}
+
+function loadUiState() {
+  try {
+    const raw = localStorage.getItem(UI_STATE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return;
+
+    if (typeof parsed.searchQuery === "string") {
+      state.searchQuery = parsed.searchQuery;
+    }
+    if (typeof parsed.selectedSessionKey === "string") {
+      state.selectedSessionKey = parsed.selectedSessionKey;
+    }
+    if (parsed.rawScope === "selected" || parsed.rawScope === "all") {
+      state.raw.scope = parsed.rawScope;
+    }
+    if (typeof parsed.rawFilter === "string") {
+      state.raw.filter = parsed.rawFilter;
+    }
+    if (typeof parsed.rawPaused === "boolean") {
+      state.raw.paused = parsed.rawPaused;
+    }
+    if (Array.isArray(parsed.rawEnabledKinds) && parsed.rawEnabledKinds.length) {
+      state.raw.enabledKinds = new Set(parsed.rawEnabledKinds.map((v) => String(v)));
+    }
+  } catch (_) {
+    // ignore malformed state
+  }
 }
 
 function escapeHtml(value) {
@@ -562,11 +634,21 @@ function connectRawStream() {
     return;
   }
 
+  if (state.raw.eventSource) {
+    try {
+      state.raw.eventSource.close();
+    } catch (_) {
+      // ignore
+    }
+    state.raw.eventSource = null;
+  }
+
   const source = new EventSource("/api/raw-stream?replay=2000");
   state.raw.eventSource = source;
 
   source.addEventListener("open", () => {
     state.raw.connected = true;
+    state.raw.reconnectAttempt = 0;
     updateRawHeader();
   });
 
@@ -594,6 +676,21 @@ function connectRawStream() {
   source.onerror = () => {
     state.raw.connected = false;
     updateRawHeader();
+
+    try {
+      source.close();
+    } catch (_) {
+      // ignore
+    }
+
+    state.raw.reconnectAttempt = (state.raw.reconnectAttempt || 0) + 1;
+    const backoff = Math.min(12000, 1200 * state.raw.reconnectAttempt);
+
+    window.setTimeout(() => {
+      if (!state.raw.connected) {
+        connectRawStream();
+      }
+    }, backoff);
   };
 }
 
@@ -1407,6 +1504,7 @@ async function selectSession(sessionKey) {
   state.selectedSessionKey = sessionKey;
   state.selectedTerminalIndex = null;
   state.raw.selectedWindow = null;
+  saveUiState();
   renderSessions();
   renderSessionMeta(session);
   renderTerminalMessages();
@@ -1461,7 +1559,12 @@ async function loadSessionsIndex() {
     renderSessions();
 
     if (state.sessions.length) {
-      await selectSession(state.sessions[0].key);
+      const preferred =
+        state.selectedSessionKey &&
+        state.sessions.some((s) => s.key === state.selectedSessionKey)
+          ? state.selectedSessionKey
+          : state.sessions[0].key;
+      await selectSession(preferred);
     } else {
       renderSessionMeta(null);
       renderTerminalMessages();
@@ -1508,6 +1611,7 @@ async function handleFileImport(event) {
 
 elements.sessionSearch.addEventListener("input", (event) => {
   state.searchQuery = event.target.value || "";
+  saveUiState();
   renderSessions();
 });
 
@@ -1545,6 +1649,7 @@ if (elements.rawKindFilters) {
       button.classList.add("active");
     }
 
+    saveUiState();
     renderRawEvents();
   });
 }
@@ -1552,6 +1657,7 @@ if (elements.rawKindFilters) {
 if (elements.rawScope) {
   elements.rawScope.addEventListener("change", (event) => {
     state.raw.scope = event.target.value || "selected";
+    saveUiState();
     renderRawEvents();
   });
 }
@@ -1559,6 +1665,7 @@ if (elements.rawScope) {
 if (elements.rawFilter) {
   elements.rawFilter.addEventListener("input", (event) => {
     state.raw.filter = event.target.value || "";
+    saveUiState();
     renderRawEvents();
   });
 }
@@ -1566,6 +1673,7 @@ if (elements.rawFilter) {
 if (elements.rawPauseButton) {
   elements.rawPauseButton.addEventListener("click", () => {
     state.raw.paused = !state.raw.paused;
+    saveUiState();
     updateRawHeader();
     if (!state.raw.paused) {
       renderRawEvents();
@@ -1599,8 +1707,11 @@ document.addEventListener("keydown", (event) => {
 });
 
 initTheme();
+loadUiState();
+applyUiStateToControls();
 updateRawHeader();
 renderRawEvents();
 loadConfig();
 connectRawStream();
 loadSessionsIndex();
+window.setInterval(loadSessionsIndex, 15000);

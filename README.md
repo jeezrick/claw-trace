@@ -7,7 +7,7 @@
 - `public/` 前端页面（index.html / styles.css / app.js）
 - `server.js` 轻量 HTTP 服务 + API
 
-## 新增能力（v1.0.17）
+## 新增能力（v1.0.18）
 
 - 在页面顶部新增 **Raw Stream 实时链路面板**（Live）
 - 支持 SSE 实时推送、关键词过滤、暂停/继续、清空
@@ -26,6 +26,10 @@
 - 全量模式仍保留 raw stream 聚合流
   - SSE 初次连接回放提升到 `replay=2000`
   - 服务端在内存缓存为空时可从 raw 文件补读历史并回放
+- 稳定性增强（减少手动刷新）
+  - SSE 断线自动重连（指数退避）
+  - UI 状态持久化（session / scope / filter / kinds / paused）
+  - 周期性自动刷新 sessions（15s）并保持当前选中 session
 
 ## 一键安装（推荐）
 
