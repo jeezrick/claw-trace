@@ -4,12 +4,13 @@ import type { LoadState } from '../store/app-store';
 type SessionListPanelProps = {
   sessions: SessionSummary[];
   selectedSessionId: string | null;
+  selectedSessionMissing: boolean;
   state: LoadState;
   refreshing: boolean;
   lastLoadedAt: number | null;
   error: string | null;
   onRefresh: () => void;
-  onSelect: (sessionId: string) => void;
+  onSelect: (session: SessionSummary) => void;
 };
 
 function formatTime(value: number | null) {
@@ -48,9 +49,18 @@ export function SessionListPanel(props: SessionListPanelProps) {
         <span className="supporting-text">Count: {props.sessions.length}</span>
         <span className="supporting-text">Last sync: {formatTime(props.lastLoadedAt)}</span>
         {props.refreshing ? <span className="status-pill status-connecting">refreshing</span> : null}
+        {props.selectedSessionMissing ? (
+          <span className="status-pill status-stalled">selection retained</span>
+        ) : null}
       </div>
 
       {props.error ? <p className="error-text">{props.error}</p> : null}
+      {props.selectedSessionMissing ? (
+        <p className="supporting-text">
+          The selected session is missing from the latest ingest snapshot. The current selection is
+          pinned until it reappears or you choose another session.
+        </p>
+      ) : null}
 
       {props.sessions.length === 0 ? (
         <div className="empty-state">
@@ -70,7 +80,7 @@ export function SessionListPanel(props: SessionListPanelProps) {
                 type="button"
                 className="session-card"
                 aria-pressed={props.selectedSessionId === session.id}
-                onClick={() => props.onSelect(session.id)}
+                onClick={() => props.onSelect(session)}
               >
                 <div className="session-card-head">
                   <span className={`status-pill status-${session.status}`}>{session.status}</span>

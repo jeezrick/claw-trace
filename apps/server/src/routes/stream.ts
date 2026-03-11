@@ -85,7 +85,7 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
       liveTailReady: true,
       sessionId: parsed.data.sessionId ?? null,
       resumeCursor: lastCursor,
-      latestCursor: deps.store.getLatestRawStreamCursor(),
+      latestCursor: deps.store.getLatestRawStreamCursor(parsed.data.sessionId),
     });
 
     const heartbeat = setInterval(() => {

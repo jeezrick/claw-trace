@@ -42,26 +42,37 @@ export default function App() {
   const sessionsLastLoadedAt = useAppStore((state) => state.sessionsLastLoadedAt);
   const sessionsError = useAppStore((state) => state.sessionsError);
   const selectedSessionId = useAppStore((state) => state.selectedSessionId);
+  const selectedSessionSnapshot = useAppStore((state) => state.selectedSessionSnapshot);
   const actionHistory = useAppStore((state) => state.actionHistory);
   const actionHistoryState = useAppStore((state) => state.actionHistoryState);
   const actionHistoryRefreshing = useAppStore((state) => state.actionHistoryRefreshing);
   const actionHistoryLastLoadedAt = useAppStore((state) => state.actionHistoryLastLoadedAt);
   const actionHistoryError = useAppStore((state) => state.actionHistoryError);
   const debugEvents = useAppStore((state) => state.debugEvents);
+  const debugStreamScope = useAppStore((state) => state.debugStreamScope);
   const streamStatus = useAppStore((state) => state.streamStatus);
   const streamCursor = useAppStore((state) => state.streamCursor);
   const streamError = useAppStore((state) => state.streamError);
   const streamInfo = useAppStore((state) => state.streamInfo);
   const selectSession = useAppStore((state) => state.selectSession);
+  const syncSelectedSession = useAppStore((state) => state.syncSelectedSession);
   const resetActionHistory = useAppStore((state) => state.resetActionHistory);
+  const setDebugStreamScope = useAppStore((state) => state.setDebugStreamScope);
   const setStreamStatus = useAppStore((state) => state.setStreamStatus);
   const setStreamReady = useAppStore((state) => state.setStreamReady);
   const appendDebugEvent = useAppStore((state) => state.appendDebugEvent);
   const setStreamError = useAppStore((state) => state.setStreamError);
   const resetDebugStream = useAppStore((state) => state.resetDebugStream);
 
-  const selectedSession =
+  const liveSelectedSession =
     sessions.find((session) => session.id === selectedSessionId) ?? null;
+  const selectedSession =
+    liveSelectedSession ??
+    (selectedSessionSnapshot?.id === selectedSessionId ? selectedSessionSnapshot : null);
+  const selectedSessionMissing =
+    selectedSessionId !== null && liveSelectedSession === null && selectedSession !== null;
+  const effectiveStreamSessionId =
+    debugStreamScope === 'selected' ? selectedSessionId ?? undefined : undefined;
 
   async function refreshSessions(options: { silent?: boolean } = {}) {
     useAppStore.getState().setSessionsLoading({ silent: options.silent });
@@ -87,6 +98,9 @@ export default function App() {
       }
 
       startTransition(() => {
+        if (response.session) {
+          syncSelectedSession(response.session);
+        }
         useAppStore.getState().setActionHistory(response.items);
       });
     } catch (error) {
@@ -126,22 +140,37 @@ export default function App() {
   }, [selectedSessionId]);
 
   useEffect(() => {
+    let disposed = false;
+
     resetDebugStream();
     setStreamStatus('connecting');
 
-    const eventSource = createDebugEventSource();
+    const eventSource = createDebugEventSource({
+      sessionId: effectiveStreamSessionId,
+    });
 
     eventSource.addEventListener('open', () => {
+      if (disposed) {
+        return;
+      }
       setStreamStatus('connecting');
     });
 
     eventSource.addEventListener('ready', (event) => {
+      if (disposed) {
+        return;
+      }
+
       startTransition(() => {
         setStreamReady(parseEventData<StreamReadyEvent>(event as MessageEvent<string>));
       });
     });
 
     eventSource.addEventListener('raw', (event) => {
+      if (disposed) {
+        return;
+      }
+
       const parsed = parseEventData<RawDebugEvent>(event as MessageEvent<string>);
 
       if (!isUsefulRawEvent(parsed)) {
@@ -154,17 +183,31 @@ export default function App() {
     });
 
     eventSource.addEventListener('heartbeat', () => {
+      if (disposed) {
+        return;
+      }
       setStreamStatus('open');
     });
 
     eventSource.onerror = () => {
+      if (disposed) {
+        return;
+      }
       setStreamError('SSE connection dropped. EventSource will retry automatically.');
     };
 
     return () => {
+      disposed = true;
       eventSource.close();
     };
-  }, []);
+  }, [
+    appendDebugEvent,
+    effectiveStreamSessionId,
+    resetDebugStream,
+    setStreamError,
+    setStreamReady,
+    setStreamStatus,
+  ]);
 
   return (
     <AppShell
@@ -184,11 +227,14 @@ export default function App() {
             }
           }}
           onSelect={selectSession}
+          selectedSessionMissing={selectedSessionMissing}
         />
       }
       actionPanel={
         <ActionHistoryPanel
           session={selectedSession}
+          selectedSessionId={selectedSessionId}
+          sessionMissing={selectedSessionMissing}
           items={actionHistory}
           state={actionHistoryState}
           refreshing={actionHistoryRefreshing}
@@ -203,7 +249,10 @@ export default function App() {
           cursor={streamCursor}
           error={streamError}
           info={streamInfo}
+          scope={debugStreamScope}
           selectedSessionId={selectedSessionId}
+          effectiveSessionId={effectiveStreamSessionId ?? null}
+          onScopeChange={setDebugStreamScope}
         />
       }
     />

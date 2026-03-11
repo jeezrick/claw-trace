@@ -199,6 +199,7 @@ export function createEventStore(db: DatabaseClient) {
   const latestRawStreamCursorStatement = db.prepare(`
     SELECT COALESCE(MAX(stream_cursor), 0) AS latestCursor
     FROM raw_stream_entries
+    WHERE (? IS NULL OR session_id = ?)
   `);
 
   const metricsStatement = db.prepare(`
@@ -379,8 +380,11 @@ export function createEventStore(db: DatabaseClient) {
       ).map(mapRawStreamRow);
     },
 
-    getLatestRawStreamCursor(): number {
-      const row = latestRawStreamCursorStatement.get() as { latestCursor: number };
+    getLatestRawStreamCursor(sessionId?: string): number {
+      const row = latestRawStreamCursorStatement.get(
+        sessionId ?? null,
+        sessionId ?? null
+      ) as { latestCursor: number };
       return row.latestCursor;
     },
 

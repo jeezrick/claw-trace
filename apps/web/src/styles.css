@@ -154,9 +154,36 @@ button {
 }
 
 .secondary-button:hover,
-.session-card:hover {
+.session-card:hover,
+.segment-button:hover {
   transform: translateY(-1px);
   border-color: rgba(15, 118, 110, 0.3);
+}
+
+.segmented-control {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid rgba(34, 44, 64, 0.12);
+  border-radius: 999px;
+  padding: 0.2rem;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.segment-button {
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.45rem 0.8rem;
+  transition:
+    transform 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.segment-button.is-active {
+  background: rgba(15, 118, 110, 0.14);
+  color: var(--accent-strong);
 }
 
 .session-list,
@@ -242,6 +269,12 @@ button {
   list-style: none;
 }
 
+.history-viewport {
+  max-height: min(60vh, 48rem);
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
 .history-item,
 .debug-entry,
 .empty-state {
@@ -259,6 +292,12 @@ button {
   align-items: baseline;
 }
 
+.history-item-new {
+  border-color: rgba(15, 118, 110, 0.32);
+  background: rgba(222, 247, 242, 0.92);
+  animation: history-item-flash 3.5s ease forwards;
+}
+
 .payload-block {
   margin: 0.75rem 0 0;
   padding: 0.75rem;
@@ -273,6 +312,18 @@ button {
 .error-text {
   margin: 0;
   color: var(--danger);
+}
+
+@keyframes history-item-flash {
+  0% {
+    background: rgba(222, 247, 242, 0.98);
+    border-color: rgba(15, 118, 110, 0.35);
+  }
+
+  100% {
+    background: rgba(255, 255, 255, 0.55);
+    border-color: rgba(34, 44, 64, 0.08);
+  }
 }
 
 @media (max-width: 1200px) {

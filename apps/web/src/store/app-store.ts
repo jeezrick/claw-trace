@@ -9,6 +9,7 @@ import type {
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 export type StreamStatus = 'idle' | 'connecting' | 'open' | 'error';
+export type DebugStreamScope = 'selected' | 'all';
 
 type AppState = {
   sessions: SessionSummary[];
@@ -17,12 +18,14 @@ type AppState = {
   sessionsLastLoadedAt: number | null;
   sessionsError: string | null;
   selectedSessionId: string | null;
+  selectedSessionSnapshot: SessionSummary | null;
   actionHistory: ActionHistoryItem[];
   actionHistoryState: LoadState;
   actionHistoryRefreshing: boolean;
   actionHistoryLastLoadedAt: number | null;
   actionHistoryError: string | null;
   debugEvents: RawDebugEvent[];
+  debugStreamScope: DebugStreamScope;
   streamStatus: StreamStatus;
   streamCursor: number | null;
   streamError: string | null;
@@ -30,11 +33,13 @@ type AppState = {
   setSessionsLoading: (options?: { silent?: boolean }) => void;
   setSessions: (sessions: SessionSummary[]) => void;
   setSessionsError: (message: string) => void;
-  selectSession: (sessionId: string | null) => void;
+  selectSession: (session: SessionSummary | null) => void;
+  syncSelectedSession: (session: SessionSummary | null) => void;
   setActionHistoryLoading: (options?: { silent?: boolean }) => void;
   setActionHistory: (items: ActionHistoryItem[]) => void;
   setActionHistoryError: (message: string) => void;
   resetActionHistory: () => void;
+  setDebugStreamScope: (scope: DebugStreamScope) => void;
   setStreamStatus: (status: StreamStatus) => void;
   setStreamReady: (event: StreamReadyEvent) => void;
   appendDebugEvent: (event: RawDebugEvent) => void;
@@ -49,12 +54,14 @@ export const useAppStore = create<AppState>((set) => ({
   sessionsLastLoadedAt: null,
   sessionsError: null,
   selectedSessionId: null,
+  selectedSessionSnapshot: null,
   actionHistory: [],
   actionHistoryState: 'idle',
   actionHistoryRefreshing: false,
   actionHistoryLastLoadedAt: null,
   actionHistoryError: null,
   debugEvents: [],
+  debugStreamScope: 'all',
   streamStatus: 'idle',
   streamCursor: null,
   streamError: null,
@@ -73,7 +80,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   setSessions: (sessions) =>
     set((state) => {
-      const selectedStillExists = sessions.some((session) => session.id === state.selectedSessionId);
+      const liveSelectedSession = state.selectedSessionId
+        ? sessions.find((session) => session.id === state.selectedSessionId) ?? null
+        : null;
+      const fallbackSelectedSession = state.selectedSessionId ? null : sessions[0] ?? null;
 
       return {
         sessions,
@@ -81,9 +91,10 @@ export const useAppStore = create<AppState>((set) => ({
         sessionsRefreshing: false,
         sessionsLastLoadedAt: Date.now(),
         sessionsError: null,
-        selectedSessionId: selectedStillExists
-          ? state.selectedSessionId
-          : sessions[0]?.id ?? null,
+        selectedSessionId:
+          state.selectedSessionId ?? fallbackSelectedSession?.id ?? null,
+        selectedSessionSnapshot:
+          liveSelectedSession ?? state.selectedSessionSnapshot ?? fallbackSelectedSession,
       };
     }),
 
@@ -94,14 +105,36 @@ export const useAppStore = create<AppState>((set) => ({
       sessionsError: message,
     }),
 
-  selectSession: (sessionId) =>
-    set({
-      selectedSessionId: sessionId,
-      actionHistory: [],
-      actionHistoryState: 'idle',
-      actionHistoryRefreshing: false,
-      actionHistoryLastLoadedAt: null,
-      actionHistoryError: null,
+  selectSession: (session) =>
+    set((state) => {
+      const sessionId = session?.id ?? null;
+
+      if (sessionId === state.selectedSessionId) {
+        return {
+          selectedSessionSnapshot: session ?? state.selectedSessionSnapshot,
+        };
+      }
+
+      return {
+        selectedSessionId: sessionId,
+        selectedSessionSnapshot: session,
+        actionHistory: [],
+        actionHistoryState: 'idle',
+        actionHistoryRefreshing: false,
+        actionHistoryLastLoadedAt: null,
+        actionHistoryError: null,
+      };
+    }),
+
+  syncSelectedSession: (session) =>
+    set((state) => {
+      if (!session || session.id !== state.selectedSessionId) {
+        return state;
+      }
+
+      return {
+        selectedSessionSnapshot: session,
+      };
     }),
 
   setActionHistoryLoading: (options) =>
@@ -138,6 +171,11 @@ export const useAppStore = create<AppState>((set) => ({
       actionHistoryRefreshing: false,
       actionHistoryLastLoadedAt: null,
       actionHistoryError: null,
+    }),
+
+  setDebugStreamScope: (scope) =>
+    set({
+      debugStreamScope: scope,
     }),
 
   setStreamStatus: (status) =>

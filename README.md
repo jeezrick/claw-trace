@@ -18,6 +18,9 @@
 - v2 新代码全部放在 `apps/server` 和 `apps/web`
 - v2 backend 启动后会 ingest 当前 OpenClaw 数据源到 SQLite
 - v2 web 会实际消费 API，渲染 session list / action history / raw debug stream
+  - debug stream 支持 `全部 session / 当前选中 session` 显式 scope 切换（按 `sessionId` best-effort 过滤）
+  - action history 后台刷新保持可见内容并短暂高亮新到达的 action
+  - session 选中态在轮询刷新时会保留 last-known snapshot，减少跳选
 
 ### 当前能力
 
@@ -35,6 +38,7 @@
 
 - phase 1 只做稳定可读 slice，不追求完整建模
 - raw stream 中很多事件当前仍然只有 `runId`，并不总能回填 `sessionId`
+  - 因此 debug stream 的“当前选中 session”scope 仍是 best-effort；缺少 `sessionId` 的事件只会出现在“全部 session”视图
 - session ingest 目前是定时重建 read model；后续 phase 2 再做更细粒度增量
 
 如果你要看推荐架构和迁移步骤，先读：
