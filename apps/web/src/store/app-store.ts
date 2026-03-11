@@ -13,21 +13,25 @@ export type StreamStatus = 'idle' | 'connecting' | 'open' | 'error';
 type AppState = {
   sessions: SessionSummary[];
   sessionsState: LoadState;
+  sessionsRefreshing: boolean;
+  sessionsLastLoadedAt: number | null;
   sessionsError: string | null;
   selectedSessionId: string | null;
   actionHistory: ActionHistoryItem[];
   actionHistoryState: LoadState;
+  actionHistoryRefreshing: boolean;
+  actionHistoryLastLoadedAt: number | null;
   actionHistoryError: string | null;
   debugEvents: RawDebugEvent[];
   streamStatus: StreamStatus;
   streamCursor: number | null;
   streamError: string | null;
   streamInfo: StreamReadyEvent | null;
-  setSessionsLoading: () => void;
+  setSessionsLoading: (options?: { silent?: boolean }) => void;
   setSessions: (sessions: SessionSummary[]) => void;
   setSessionsError: (message: string) => void;
   selectSession: (sessionId: string | null) => void;
-  setActionHistoryLoading: () => void;
+  setActionHistoryLoading: (options?: { silent?: boolean }) => void;
   setActionHistory: (items: ActionHistoryItem[]) => void;
   setActionHistoryError: (message: string) => void;
   resetActionHistory: () => void;
@@ -41,10 +45,14 @@ type AppState = {
 export const useAppStore = create<AppState>((set) => ({
   sessions: [],
   sessionsState: 'idle',
+  sessionsRefreshing: false,
+  sessionsLastLoadedAt: null,
   sessionsError: null,
   selectedSessionId: null,
   actionHistory: [],
   actionHistoryState: 'idle',
+  actionHistoryRefreshing: false,
+  actionHistoryLastLoadedAt: null,
   actionHistoryError: null,
   debugEvents: [],
   streamStatus: 'idle',
@@ -52,10 +60,15 @@ export const useAppStore = create<AppState>((set) => ({
   streamError: null,
   streamInfo: null,
 
-  setSessionsLoading: () =>
-    set({
-      sessionsState: 'loading',
-      sessionsError: null,
+  setSessionsLoading: (options) =>
+    set((state) => {
+      const silent = options?.silent === true && state.sessions.length > 0;
+
+      return {
+        sessionsState: silent ? state.sessionsState : 'loading',
+        sessionsRefreshing: silent,
+        sessionsError: null,
+      };
     }),
 
   setSessions: (sessions) =>
@@ -65,6 +78,8 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         sessions,
         sessionsState: 'ready',
+        sessionsRefreshing: false,
+        sessionsLastLoadedAt: Date.now(),
         sessionsError: null,
         selectedSessionId: selectedStillExists
           ? state.selectedSessionId
@@ -75,6 +90,7 @@ export const useAppStore = create<AppState>((set) => ({
   setSessionsError: (message) =>
     set({
       sessionsState: 'error',
+      sessionsRefreshing: false,
       sessionsError: message,
     }),
 
@@ -83,25 +99,35 @@ export const useAppStore = create<AppState>((set) => ({
       selectedSessionId: sessionId,
       actionHistory: [],
       actionHistoryState: 'idle',
+      actionHistoryRefreshing: false,
+      actionHistoryLastLoadedAt: null,
       actionHistoryError: null,
     }),
 
-  setActionHistoryLoading: () =>
-    set({
-      actionHistoryState: 'loading',
-      actionHistoryError: null,
+  setActionHistoryLoading: (options) =>
+    set((state) => {
+      const silent = options?.silent === true && state.actionHistory.length > 0;
+
+      return {
+        actionHistoryState: silent ? state.actionHistoryState : 'loading',
+        actionHistoryRefreshing: silent,
+        actionHistoryError: null,
+      };
     }),
 
   setActionHistory: (items) =>
     set({
       actionHistory: items,
       actionHistoryState: 'ready',
+      actionHistoryRefreshing: false,
+      actionHistoryLastLoadedAt: Date.now(),
       actionHistoryError: null,
     }),
 
   setActionHistoryError: (message) =>
     set({
       actionHistoryState: 'error',
+      actionHistoryRefreshing: false,
       actionHistoryError: message,
     }),
 
@@ -109,6 +135,8 @@ export const useAppStore = create<AppState>((set) => ({
     set({
       actionHistory: [],
       actionHistoryState: 'idle',
+      actionHistoryRefreshing: false,
+      actionHistoryLastLoadedAt: null,
       actionHistoryError: null,
     }),
 

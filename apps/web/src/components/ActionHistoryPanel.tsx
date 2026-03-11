@@ -5,6 +5,8 @@ type ActionHistoryPanelProps = {
   session: SessionSummary | null;
   items: ActionHistoryItem[];
   state: LoadState;
+  refreshing: boolean;
+  lastLoadedAt: number | null;
   error: string | null;
 };
 
@@ -61,9 +63,14 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
         </div>
       )}
 
-      <p className="supporting-text">
-        State: <strong>{props.state}</strong>
-      </p>
+      <div className="supporting-row">
+        <span className="supporting-text">
+          State: <strong>{props.state}</strong>
+        </span>
+        <span className="supporting-text">Items: {props.items.length}</span>
+        <span className="supporting-text">Last sync: {formatTime(props.lastLoadedAt)}</span>
+        {props.refreshing ? <span className="status-pill status-connecting">refreshing</span> : null}
+      </div>
 
       {props.error ? <p className="error-text">{props.error}</p> : null}
 

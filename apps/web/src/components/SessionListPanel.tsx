@@ -5,6 +5,8 @@ type SessionListPanelProps = {
   sessions: SessionSummary[];
   selectedSessionId: string | null;
   state: LoadState;
+  refreshing: boolean;
+  lastLoadedAt: number | null;
   error: string | null;
   onRefresh: () => void;
   onSelect: (sessionId: string) => void;
@@ -39,9 +41,14 @@ export function SessionListPanel(props: SessionListPanelProps) {
         </button>
       </div>
 
-      <p className="supporting-text">
-        State: <strong>{props.state}</strong>
-      </p>
+      <div className="supporting-row">
+        <span className="supporting-text">
+          State: <strong>{props.state}</strong>
+        </span>
+        <span className="supporting-text">Count: {props.sessions.length}</span>
+        <span className="supporting-text">Last sync: {formatTime(props.lastLoadedAt)}</span>
+        {props.refreshing ? <span className="status-pill status-connecting">refreshing</span> : null}
+      </div>
 
       {props.error ? <p className="error-text">{props.error}</p> : null}
 

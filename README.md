@@ -134,10 +134,27 @@ cd /root/code/claw-trace
 npm install
 ```
 
-然后分 3 个终端运行：
+### 最省事：直接跑 v2 双进程
 
 ```bash
-# 终端 1：v1（保持现有路径）
+npm run v2:dev
+```
+
+这会同时启动：
+
+- v2 backend: `http://127.0.0.1:8790`
+- v2 frontend: `http://127.0.0.1:5174`
+
+如果你还需要保留 v1，再单独开一个终端跑：
+
+```bash
+npm start
+```
+
+### 手动分终端运行
+
+```bash
+# 终端 1：v1（可选，保持现有路径）
 npm start
 ```
 
@@ -147,8 +164,8 @@ npm run v2:server:dev
 ```
 
 ```bash
-# 终端 3：v2 frontend
-npm run v2:web:dev
+# 终端 3：v2 frontend（固定到 5174；若端口被占用会直接报错，不再悄悄漂移）
+npm run v2:web:dev:fixed
 ```
 
 默认端口：
@@ -169,6 +186,12 @@ npm run v2:web:dev
   - `GET /api/v2/stream`
 
 如需构建：
+
+```bash
+npm run v2:build
+```
+
+如果想分别构建，也可以：
 
 ```bash
 npm run v2:server:build

@@ -38,23 +38,21 @@ function isUsefulRawEvent(event: RawDebugEvent) {
 export default function App() {
   const sessions = useAppStore((state) => state.sessions);
   const sessionsState = useAppStore((state) => state.sessionsState);
+  const sessionsRefreshing = useAppStore((state) => state.sessionsRefreshing);
+  const sessionsLastLoadedAt = useAppStore((state) => state.sessionsLastLoadedAt);
   const sessionsError = useAppStore((state) => state.sessionsError);
   const selectedSessionId = useAppStore((state) => state.selectedSessionId);
   const actionHistory = useAppStore((state) => state.actionHistory);
   const actionHistoryState = useAppStore((state) => state.actionHistoryState);
+  const actionHistoryRefreshing = useAppStore((state) => state.actionHistoryRefreshing);
+  const actionHistoryLastLoadedAt = useAppStore((state) => state.actionHistoryLastLoadedAt);
   const actionHistoryError = useAppStore((state) => state.actionHistoryError);
   const debugEvents = useAppStore((state) => state.debugEvents);
   const streamStatus = useAppStore((state) => state.streamStatus);
   const streamCursor = useAppStore((state) => state.streamCursor);
   const streamError = useAppStore((state) => state.streamError);
   const streamInfo = useAppStore((state) => state.streamInfo);
-  const setSessionsLoading = useAppStore((state) => state.setSessionsLoading);
-  const setSessions = useAppStore((state) => state.setSessions);
-  const setSessionsError = useAppStore((state) => state.setSessionsError);
   const selectSession = useAppStore((state) => state.selectSession);
-  const setActionHistoryLoading = useAppStore((state) => state.setActionHistoryLoading);
-  const setActionHistory = useAppStore((state) => state.setActionHistory);
-  const setActionHistoryError = useAppStore((state) => state.setActionHistoryError);
   const resetActionHistory = useAppStore((state) => state.resetActionHistory);
   const setStreamStatus = useAppStore((state) => state.setStreamStatus);
   const setStreamReady = useAppStore((state) => state.setStreamReady);
@@ -65,16 +63,36 @@ export default function App() {
   const selectedSession =
     sessions.find((session) => session.id === selectedSessionId) ?? null;
 
-  async function refreshSessions() {
-    setSessionsLoading();
+  async function refreshSessions(options: { silent?: boolean } = {}) {
+    useAppStore.getState().setSessionsLoading({ silent: options.silent });
 
     try {
       const response = await listSessions(100);
       startTransition(() => {
-        setSessions(response.items);
+        useAppStore.getState().setSessions(response.items);
       });
     } catch (error) {
-      setSessionsError(toErrorMessage(error));
+      useAppStore.getState().setSessionsError(toErrorMessage(error));
+    }
+  }
+
+  async function loadActionHistory(sessionId: string, options: { silent?: boolean } = {}) {
+    useAppStore.getState().setActionHistoryLoading({ silent: options.silent });
+
+    try {
+      const response = await getActionHistory(sessionId);
+
+      if (useAppStore.getState().selectedSessionId !== sessionId) {
+        return;
+      }
+
+      startTransition(() => {
+        useAppStore.getState().setActionHistory(response.items);
+      });
+    } catch (error) {
+      if (useAppStore.getState().selectedSessionId === sessionId) {
+        useAppStore.getState().setActionHistoryError(toErrorMessage(error));
+      }
     }
   }
 
@@ -82,7 +100,7 @@ export default function App() {
     void refreshSessions();
 
     const intervalId = window.setInterval(() => {
-      void refreshSessions();
+      void refreshSessions({ silent: true });
     }, 15_000);
 
     return () => {
@@ -96,28 +114,14 @@ export default function App() {
       return;
     }
 
-    let disposed = false;
+    void loadActionHistory(selectedSessionId);
 
-    setActionHistoryLoading();
-
-    void getActionHistory(selectedSessionId)
-      .then((response) => {
-        if (disposed) {
-          return;
-        }
-
-        startTransition(() => {
-          setActionHistory(response.items);
-        });
-      })
-      .catch((error) => {
-        if (!disposed) {
-          setActionHistoryError(toErrorMessage(error));
-        }
-      });
+    const intervalId = window.setInterval(() => {
+      void loadActionHistory(selectedSessionId, { silent: true });
+    }, 5_000);
 
     return () => {
-      disposed = true;
+      window.clearInterval(intervalId);
     };
   }, [selectedSessionId]);
 
@@ -170,9 +174,14 @@ export default function App() {
           sessions={sessions}
           selectedSessionId={selectedSessionId}
           state={sessionsState}
+          refreshing={sessionsRefreshing}
+          lastLoadedAt={sessionsLastLoadedAt}
           error={sessionsError}
           onRefresh={() => {
             void refreshSessions();
+            if (selectedSessionId) {
+              void loadActionHistory(selectedSessionId, { silent: true });
+            }
           }}
           onSelect={selectSession}
         />
@@ -182,6 +191,8 @@ export default function App() {
           session={selectedSession}
           items={actionHistory}
           state={actionHistoryState}
+          refreshing={actionHistoryRefreshing}
+          lastLoadedAt={actionHistoryLastLoadedAt}
           error={actionHistoryError}
         />
       }
