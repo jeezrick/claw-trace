@@ -99,33 +99,35 @@ export function DebugStreamPanel(props: DebugStreamPanelProps) {
         </p>
       ) : null}
 
-      {props.events.length === 0 ? (
-        <div className="empty-state">
-          <p>No raw debug events have been replayed yet.</p>
-          <p className="supporting-text">
-            {props.scope === 'selected' && props.effectiveSessionId
-              ? 'This panel is replaying the selected session tail from SQLite-backed SSE.'
-              : 'This panel follows the global raw stream and resumes from the last DB cursor.'}
-          </p>
-        </div>
-      ) : (
-        <div className="debug-stream-list">
-          {props.events.map((event) => (
-            <article key={event.eventId} className="debug-entry">
-              <div className="debug-entry-head">
-                <strong>{event.kind}</strong>
+      <div className="panel-viewport">
+        {props.events.length === 0 ? (
+          <div className="empty-state">
+            <p>No raw debug events have been replayed yet.</p>
+            <p className="supporting-text">
+              {props.scope === 'selected' && props.effectiveSessionId
+                ? 'This panel is replaying the selected session tail from SQLite-backed SSE.'
+                : 'This panel follows the global raw stream and resumes from the last DB cursor.'}
+            </p>
+          </div>
+        ) : (
+          <div className="debug-stream-list">
+            {props.events.map((event) => (
+              <article key={event.eventId} className="debug-entry">
+                <div className="debug-entry-head">
+                  <strong className="card-title">{event.kind}</strong>
+                  <span className="supporting-text">
+                    #{event.streamCursor} · {new Date(event.eventTs).toLocaleTimeString()}
+                  </span>
+                </div>
                 <span className="supporting-text">
-                  #{event.streamCursor} · {new Date(event.eventTs).toLocaleTimeString()}
+                  session {event.sessionId ?? 'n/a'} · run {event.runId ?? 'n/a'}
                 </span>
-              </div>
-              <span className="supporting-text">
-                session {event.sessionId ?? 'n/a'} · run {event.runId ?? 'n/a'}
-              </span>
-              <pre className="payload-block">{previewEvent(event)}</pre>
-            </article>
-          ))}
-        </div>
-      )}
+                <pre className="payload-block">{previewEvent(event)}</pre>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

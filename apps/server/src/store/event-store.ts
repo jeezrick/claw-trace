@@ -179,6 +179,24 @@ export function createEventStore(db: DatabaseClient) {
     LIMIT ?
   `);
 
+  const listAllActionHistoryStatement = db.prepare(`
+    SELECT
+      id AS eventId,
+      session_id AS sessionId,
+      sequence,
+      kind,
+      status,
+      title,
+      summary,
+      started_at AS startedAt,
+      ended_at AS endedAt,
+      cursor,
+      payload_json AS payloadJson
+    FROM action_events
+    WHERE session_id = ?
+    ORDER BY sequence ASC
+  `);
+
   const listRawStreamEntriesStatement = db.prepare(`
     SELECT
       stream_cursor AS streamCursor,
@@ -368,6 +386,11 @@ export function createEventStore(db: DatabaseClient) {
     listActionHistory(sessionId: string, limit: number): ActionHistoryItem[] {
       const rows = listActionHistoryStatement.all(sessionId, limit) as ActionRow[];
       return rows.reverse().map(mapActionRow);
+    },
+
+    listAllActionHistory(sessionId: string): ActionHistoryItem[] {
+      const rows = listAllActionHistoryStatement.all(sessionId) as ActionRow[];
+      return rows.map(mapActionRow);
     },
 
     listRawStreamEntriesAfter(

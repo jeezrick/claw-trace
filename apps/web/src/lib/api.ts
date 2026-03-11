@@ -56,6 +56,48 @@ export type ActionHistoryItem = {
   payload: unknown;
 };
 
+export type ChainSummary = {
+  user: number;
+  think: number;
+  toolCall: number;
+  toolResult: number;
+  reply: number;
+  assistantError: number;
+  assistantText: number;
+  system: number;
+  tools: string[];
+};
+
+export type ChainStep = {
+  eventId: string;
+  sequence: number;
+  kind: ActionEventKind;
+  label: string;
+  title: string;
+  timestamp: number | null;
+  body: string;
+  meta: string;
+  isError: boolean;
+  raw: unknown | null;
+};
+
+export type TerminalMessageItem = {
+  key: string;
+  eventId: string;
+  ordinal: number;
+  timestamp: number | null;
+  rowIndex: number | null;
+  preview: string;
+  fullText: string;
+  pending: boolean;
+  startSequence: number;
+  endSequence: number;
+  stepCount: number;
+  triggerUserText: string | null;
+  summary: ChainSummary;
+  steps: ChainStep[];
+};
+
 export type RawDebugEvent = {
   streamCursor: number;
   eventId: string;
@@ -102,6 +144,13 @@ export type ActionHistoryResponse = {
   ingestReady: boolean;
 };
 
+export type SessionDetailResponse = {
+  sessionId: string;
+  session: SessionSummary | null;
+  terminalMessages: TerminalMessageItem[];
+  ingestReady: boolean;
+};
+
 const apiBase = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
 async function fetchJson<T>(pathname: string): Promise<T> {
@@ -121,6 +170,12 @@ export function listSessions(limit = 50) {
 export function getActionHistory(sessionId: string, limit = 100) {
   return fetchJson<ActionHistoryResponse>(
     `/api/v2/sessions/${encodeURIComponent(sessionId)}/actions?limit=${limit}`
+  );
+}
+
+export function getSessionDetail(sessionId: string) {
+  return fetchJson<SessionDetailResponse>(
+    `/api/v2/sessions/${encodeURIComponent(sessionId)}/detail`
   );
 }
 

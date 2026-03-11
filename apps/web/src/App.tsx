@@ -2,11 +2,14 @@ import { startTransition, useEffect } from 'react';
 
 import { ActionHistoryPanel } from './components/ActionHistoryPanel';
 import { AppShell } from './components/AppShell';
+import { ChainPanel } from './components/ChainPanel';
 import { DebugStreamPanel } from './components/DebugStreamPanel';
 import { SessionListPanel } from './components/SessionListPanel';
+import { TerminalMessagePanel } from './components/TerminalMessagePanel';
 import {
   createDebugEventSource,
   getActionHistory,
+  getSessionDetail,
   listSessions,
   parseEventData,
   type RawDebugEvent,
@@ -43,6 +46,12 @@ export default function App() {
   const sessionsError = useAppStore((state) => state.sessionsError);
   const selectedSessionId = useAppStore((state) => state.selectedSessionId);
   const selectedSessionSnapshot = useAppStore((state) => state.selectedSessionSnapshot);
+  const sessionDetail = useAppStore((state) => state.sessionDetail);
+  const sessionDetailState = useAppStore((state) => state.sessionDetailState);
+  const sessionDetailRefreshing = useAppStore((state) => state.sessionDetailRefreshing);
+  const sessionDetailLastLoadedAt = useAppStore((state) => state.sessionDetailLastLoadedAt);
+  const sessionDetailError = useAppStore((state) => state.sessionDetailError);
+  const selectedTerminalKey = useAppStore((state) => state.selectedTerminalKey);
   const actionHistory = useAppStore((state) => state.actionHistory);
   const actionHistoryState = useAppStore((state) => state.actionHistoryState);
   const actionHistoryRefreshing = useAppStore((state) => state.actionHistoryRefreshing);
@@ -54,8 +63,14 @@ export default function App() {
   const streamCursor = useAppStore((state) => state.streamCursor);
   const streamError = useAppStore((state) => state.streamError);
   const streamInfo = useAppStore((state) => state.streamInfo);
+  const workspaceTab = useAppStore((state) => state.workspaceTab);
   const selectSession = useAppStore((state) => state.selectSession);
   const syncSelectedSession = useAppStore((state) => state.syncSelectedSession);
+  const setSessionDetailLoading = useAppStore((state) => state.setSessionDetailLoading);
+  const setSessionDetail = useAppStore((state) => state.setSessionDetail);
+  const setSessionDetailError = useAppStore((state) => state.setSessionDetailError);
+  const resetSessionDetail = useAppStore((state) => state.resetSessionDetail);
+  const selectTerminal = useAppStore((state) => state.selectTerminal);
   const resetActionHistory = useAppStore((state) => state.resetActionHistory);
   const setDebugStreamScope = useAppStore((state) => state.setDebugStreamScope);
   const setStreamStatus = useAppStore((state) => state.setStreamStatus);
@@ -63,6 +78,7 @@ export default function App() {
   const appendDebugEvent = useAppStore((state) => state.appendDebugEvent);
   const setStreamError = useAppStore((state) => state.setStreamError);
   const resetDebugStream = useAppStore((state) => state.resetDebugStream);
+  const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
 
   const liveSelectedSession =
     sessions.find((session) => session.id === selectedSessionId) ?? null;
@@ -71,6 +87,8 @@ export default function App() {
     (selectedSessionSnapshot?.id === selectedSessionId ? selectedSessionSnapshot : null);
   const selectedSessionMissing =
     selectedSessionId !== null && liveSelectedSession === null && selectedSession !== null;
+  const selectedTerminal =
+    sessionDetail.find((terminal) => terminal.key === selectedTerminalKey) ?? null;
   const effectiveStreamSessionId =
     debugStreamScope === 'selected' ? selectedSessionId ?? undefined : undefined;
 
@@ -84,6 +102,29 @@ export default function App() {
       });
     } catch (error) {
       useAppStore.getState().setSessionsError(toErrorMessage(error));
+    }
+  }
+
+  async function loadSessionDetail(sessionId: string, options: { silent?: boolean } = {}) {
+    setSessionDetailLoading({ silent: options.silent });
+
+    try {
+      const response = await getSessionDetail(sessionId);
+
+      if (useAppStore.getState().selectedSessionId !== sessionId) {
+        return;
+      }
+
+      startTransition(() => {
+        if (response.session) {
+          syncSelectedSession(response.session);
+        }
+        setSessionDetail(response.terminalMessages);
+      });
+    } catch (error) {
+      if (useAppStore.getState().selectedSessionId === sessionId) {
+        setSessionDetailError(toErrorMessage(error));
+      }
     }
   }
 
@@ -124,13 +165,16 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedSessionId) {
+      resetSessionDetail();
       resetActionHistory();
       return;
     }
 
+    void loadSessionDetail(selectedSessionId);
     void loadActionHistory(selectedSessionId);
 
     const intervalId = window.setInterval(() => {
+      void loadSessionDetail(selectedSessionId, { silent: true });
       void loadActionHistory(selectedSessionId, { silent: true });
     }, 5_000);
 
@@ -212,6 +256,13 @@ export default function App() {
   return (
     <AppShell
       selectedSessionId={selectedSessionId}
+      selectedTerminalLabel={
+        selectedTerminal
+          ? `${selectedTerminal.pending ? 'Pending' : 'Reply'} #${selectedTerminal.ordinal}`
+          : null
+      }
+      workspaceTab={workspaceTab}
+      onTabChange={setWorkspaceTab}
       sessionPanel={
         <SessionListPanel
           sessions={sessions}
@@ -223,6 +274,7 @@ export default function App() {
           onRefresh={() => {
             void refreshSessions();
             if (selectedSessionId) {
+              void loadSessionDetail(selectedSessionId, { silent: true });
               void loadActionHistory(selectedSessionId, { silent: true });
             }
           }}
@@ -230,30 +282,55 @@ export default function App() {
           selectedSessionMissing={selectedSessionMissing}
         />
       }
+      mainPanel={
+        <div className="workflow-grid">
+          <section className="panel panel-terminal">
+            <TerminalMessagePanel
+              session={selectedSession}
+              selectedSessionId={selectedSessionId}
+              sessionMissing={selectedSessionMissing}
+              items={sessionDetail}
+              selectedTerminalKey={selectedTerminalKey}
+              state={sessionDetailState}
+              refreshing={sessionDetailRefreshing}
+              lastLoadedAt={sessionDetailLastLoadedAt}
+              error={sessionDetailError}
+              onSelect={selectTerminal}
+            />
+          </section>
+          <section className="panel panel-chain">
+            <ChainPanel session={selectedSession} terminal={selectedTerminal} />
+          </section>
+        </div>
+      }
       actionPanel={
-        <ActionHistoryPanel
-          session={selectedSession}
-          selectedSessionId={selectedSessionId}
-          sessionMissing={selectedSessionMissing}
-          items={actionHistory}
-          state={actionHistoryState}
-          refreshing={actionHistoryRefreshing}
-          lastLoadedAt={actionHistoryLastLoadedAt}
-          error={actionHistoryError}
-        />
+        <section className="panel panel-detail-view">
+          <ActionHistoryPanel
+            session={selectedSession}
+            selectedSessionId={selectedSessionId}
+            sessionMissing={selectedSessionMissing}
+            items={actionHistory}
+            state={actionHistoryState}
+            refreshing={actionHistoryRefreshing}
+            lastLoadedAt={actionHistoryLastLoadedAt}
+            error={actionHistoryError}
+          />
+        </section>
       }
       debugPanel={
-        <DebugStreamPanel
-          events={debugEvents}
-          status={streamStatus}
-          cursor={streamCursor}
-          error={streamError}
-          info={streamInfo}
-          scope={debugStreamScope}
-          selectedSessionId={selectedSessionId}
-          effectiveSessionId={effectiveStreamSessionId ?? null}
-          onScopeChange={setDebugStreamScope}
-        />
+        <section className="panel panel-detail-view">
+          <DebugStreamPanel
+            events={debugEvents}
+            status={streamStatus}
+            cursor={streamCursor}
+            error={streamError}
+            info={streamInfo}
+            scope={debugStreamScope}
+            selectedSessionId={selectedSessionId}
+            effectiveSessionId={effectiveStreamSessionId ?? null}
+            onScopeChange={setDebugStreamScope}
+          />
+        </section>
       }
     />
   );

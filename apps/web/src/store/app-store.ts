@@ -5,11 +5,19 @@ import type {
   RawDebugEvent,
   SessionSummary,
   StreamReadyEvent,
+  TerminalMessageItem,
 } from '../lib/api';
 
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 export type StreamStatus = 'idle' | 'connecting' | 'open' | 'error';
 export type DebugStreamScope = 'selected' | 'all';
+export type WorkspaceTab = 'main' | 'actions' | 'debug';
+
+type TerminalSelectionSnapshot = {
+  key: string;
+  ordinal: number;
+  pending: boolean;
+};
 
 type AppState = {
   sessions: SessionSummary[];
@@ -19,6 +27,13 @@ type AppState = {
   sessionsError: string | null;
   selectedSessionId: string | null;
   selectedSessionSnapshot: SessionSummary | null;
+  sessionDetail: TerminalMessageItem[];
+  sessionDetailState: LoadState;
+  sessionDetailRefreshing: boolean;
+  sessionDetailLastLoadedAt: number | null;
+  sessionDetailError: string | null;
+  selectedTerminalKey: string | null;
+  selectedTerminalSnapshot: TerminalSelectionSnapshot | null;
   actionHistory: ActionHistoryItem[];
   actionHistoryState: LoadState;
   actionHistoryRefreshing: boolean;
@@ -30,11 +45,17 @@ type AppState = {
   streamCursor: number | null;
   streamError: string | null;
   streamInfo: StreamReadyEvent | null;
+  workspaceTab: WorkspaceTab;
   setSessionsLoading: (options?: { silent?: boolean }) => void;
   setSessions: (sessions: SessionSummary[]) => void;
   setSessionsError: (message: string) => void;
   selectSession: (session: SessionSummary | null) => void;
   syncSelectedSession: (session: SessionSummary | null) => void;
+  setSessionDetailLoading: (options?: { silent?: boolean }) => void;
+  setSessionDetail: (items: TerminalMessageItem[]) => void;
+  setSessionDetailError: (message: string) => void;
+  resetSessionDetail: () => void;
+  selectTerminal: (terminal: TerminalMessageItem | null) => void;
   setActionHistoryLoading: (options?: { silent?: boolean }) => void;
   setActionHistory: (items: ActionHistoryItem[]) => void;
   setActionHistoryError: (message: string) => void;
@@ -45,6 +66,7 @@ type AppState = {
   appendDebugEvent: (event: RawDebugEvent) => void;
   setStreamError: (message: string) => void;
   resetDebugStream: () => void;
+  setWorkspaceTab: (tab: WorkspaceTab) => void;
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -55,6 +77,13 @@ export const useAppStore = create<AppState>((set) => ({
   sessionsError: null,
   selectedSessionId: null,
   selectedSessionSnapshot: null,
+  sessionDetail: [],
+  sessionDetailState: 'idle',
+  sessionDetailRefreshing: false,
+  sessionDetailLastLoadedAt: null,
+  sessionDetailError: null,
+  selectedTerminalKey: null,
+  selectedTerminalSnapshot: null,
   actionHistory: [],
   actionHistoryState: 'idle',
   actionHistoryRefreshing: false,
@@ -66,6 +95,7 @@ export const useAppStore = create<AppState>((set) => ({
   streamCursor: null,
   streamError: null,
   streamInfo: null,
+  workspaceTab: 'main',
 
   setSessionsLoading: (options) =>
     set((state) => {
@@ -118,6 +148,13 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         selectedSessionId: sessionId,
         selectedSessionSnapshot: session,
+        sessionDetail: [],
+        sessionDetailState: 'idle',
+        sessionDetailRefreshing: false,
+        sessionDetailLastLoadedAt: null,
+        sessionDetailError: null,
+        selectedTerminalKey: null,
+        selectedTerminalSnapshot: null,
         actionHistory: [],
         actionHistoryState: 'idle',
         actionHistoryRefreshing: false,
@@ -135,6 +172,82 @@ export const useAppStore = create<AppState>((set) => ({
       return {
         selectedSessionSnapshot: session,
       };
+    }),
+
+  setSessionDetailLoading: (options) =>
+    set((state) => {
+      const silent = options?.silent === true && state.sessionDetail.length > 0;
+
+      return {
+        sessionDetailState: silent ? state.sessionDetailState : 'loading',
+        sessionDetailRefreshing: silent,
+        sessionDetailError: null,
+      };
+    }),
+
+  setSessionDetail: (items) =>
+    set((state) => {
+      const selectedByKey = state.selectedTerminalKey
+        ? items.find((item) => item.key === state.selectedTerminalKey) ?? null
+        : null;
+      const selectedByOrdinal = state.selectedTerminalSnapshot
+        ? items.find((item) => {
+            return (
+              item.ordinal === state.selectedTerminalSnapshot?.ordinal &&
+              item.pending === state.selectedTerminalSnapshot?.pending
+            );
+          }) ??
+          items.find((item) => item.ordinal === state.selectedTerminalSnapshot?.ordinal) ??
+          null
+        : null;
+      const fallbackSelection =
+        selectedByKey ?? selectedByOrdinal ?? items[items.length - 1] ?? null;
+
+      return {
+        sessionDetail: items,
+        sessionDetailState: 'ready',
+        sessionDetailRefreshing: false,
+        sessionDetailLastLoadedAt: Date.now(),
+        sessionDetailError: null,
+        selectedTerminalKey: fallbackSelection?.key ?? null,
+        selectedTerminalSnapshot: fallbackSelection
+          ? {
+              key: fallbackSelection.key,
+              ordinal: fallbackSelection.ordinal,
+              pending: fallbackSelection.pending,
+            }
+          : null,
+      };
+    }),
+
+  setSessionDetailError: (message) =>
+    set({
+      sessionDetailState: 'error',
+      sessionDetailRefreshing: false,
+      sessionDetailError: message,
+    }),
+
+  resetSessionDetail: () =>
+    set({
+      sessionDetail: [],
+      sessionDetailState: 'idle',
+      sessionDetailRefreshing: false,
+      sessionDetailLastLoadedAt: null,
+      sessionDetailError: null,
+      selectedTerminalKey: null,
+      selectedTerminalSnapshot: null,
+    }),
+
+  selectTerminal: (terminal) =>
+    set({
+      selectedTerminalKey: terminal?.key ?? null,
+      selectedTerminalSnapshot: terminal
+        ? {
+            key: terminal.key,
+            ordinal: terminal.ordinal,
+            pending: terminal.pending,
+          }
+        : null,
     }),
 
   setActionHistoryLoading: (options) =>
@@ -221,5 +334,10 @@ export const useAppStore = create<AppState>((set) => ({
       streamCursor: null,
       streamError: null,
       streamInfo: null,
+    }),
+
+  setWorkspaceTab: (tab) =>
+    set({
+      workspaceTab: tab,
     }),
 }));

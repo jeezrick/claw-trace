@@ -46,6 +46,48 @@ export const ActionHistoryItemSchema = z.object({
   payload: z.unknown(),
 });
 
+export const ChainSummarySchema = z.object({
+  user: z.number().int().nonnegative(),
+  think: z.number().int().nonnegative(),
+  toolCall: z.number().int().nonnegative(),
+  toolResult: z.number().int().nonnegative(),
+  reply: z.number().int().nonnegative(),
+  assistantError: z.number().int().nonnegative(),
+  assistantText: z.number().int().nonnegative(),
+  system: z.number().int().nonnegative(),
+  tools: z.array(z.string()),
+});
+
+export const ChainStepSchema = z.object({
+  eventId: z.string(),
+  sequence: z.number().int().positive(),
+  kind: ActionEventKindSchema,
+  label: z.string(),
+  title: z.string(),
+  timestamp: z.number().int().nullable(),
+  body: z.string(),
+  meta: z.string(),
+  isError: z.boolean(),
+  raw: z.unknown().nullable(),
+});
+
+export const TerminalMessageItemSchema = z.object({
+  key: z.string(),
+  eventId: z.string(),
+  ordinal: z.number().int().positive(),
+  timestamp: z.number().int().nullable(),
+  rowIndex: z.number().int().nullable(),
+  preview: z.string(),
+  fullText: z.string(),
+  pending: z.boolean(),
+  startSequence: z.number().int().positive(),
+  endSequence: z.number().int().positive(),
+  stepCount: z.number().int().nonnegative(),
+  triggerUserText: z.string().nullable(),
+  summary: ChainSummarySchema,
+  steps: z.array(ChainStepSchema),
+});
+
 export const RawDebugEventSchema = z.object({
   streamCursor: z.number().int().nonnegative(),
   eventId: z.string(),
@@ -81,3 +123,6 @@ export type RawDebugEvent = z.infer<typeof RawDebugEventSchema>;
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 export type ActionEventKind = z.infer<typeof ActionEventKindSchema>;
 export type EventSource = z.infer<typeof EventSourceSchema>;
+export type ChainSummary = z.infer<typeof ChainSummarySchema>;
+export type ChainStep = z.infer<typeof ChainStepSchema>;
+export type TerminalMessageItem = z.infer<typeof TerminalMessageItemSchema>;

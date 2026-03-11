@@ -228,7 +228,7 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
     <div className="panel-content">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Timeline</p>
+          <p className="eyebrow">Session detail</p>
           <h2>Action history</h2>
         </div>
         <span className={`status-pill status-${props.session?.status ?? 'unknown'}`}>
@@ -237,9 +237,12 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
       </div>
 
       {props.session ? (
-        <div className="supporting-block">
-          <strong>{props.session.title ?? props.session.id}</strong>
-          <span className="supporting-text">Updated {new Date(props.session.updatedAt).toLocaleString()}</span>
+        <div className="supporting-block supporting-block-start">
+          <strong className="card-title">{props.session.title ?? props.session.id}</strong>
+          <span className="supporting-text session-id">{props.session.id}</span>
+          <span className="supporting-text">
+            Updated {new Date(props.session.updatedAt).toLocaleString()}
+          </span>
           {props.sessionMissing ? (
             <span className="supporting-text">
               Latest session snapshot is temporarily missing this row. Keeping the current panel
@@ -269,7 +272,7 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
 
       <div
         ref={viewportRef}
-        className="history-viewport"
+        className="panel-viewport history-viewport"
         onScroll={captureViewportSnapshot}
       >
         {isLoading ? (
@@ -306,13 +309,13 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
                     <span className={`status-pill status-${item.status ?? 'unknown'}`}>
                       {labelForKind(item.kind)}
                     </span>
-                    <strong>{item.title}</strong>
+                    <strong className="card-title">{item.title}</strong>
                   </div>
                   <span className="supporting-text">
                     #{item.sequence} · {item.kind} · {formatTime(item.startedAt)}
                   </span>
                 </div>
-                {item.summary ? <p>{item.summary}</p> : null}
+                {item.summary ? <p className="history-summary">{item.summary}</p> : null}
               </li>
             ))}
           </ol>

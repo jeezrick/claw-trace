@@ -5,6 +5,7 @@ import { createDatabase } from './db/sqlite';
 import { createIngestService } from './ingest/service';
 import { registerActionHistoryRoutes } from './routes/action-history';
 import { registerHealthRoutes } from './routes/health';
+import { registerSessionDetailRoutes } from './routes/session-detail';
 import { registerSessionRoutes } from './routes/sessions';
 import { registerStreamRoutes } from './routes/stream';
 import { createEventStore } from './store/event-store';
@@ -27,6 +28,7 @@ export async function buildServer(config: AppConfig = loadConfig()) {
 
   registerHealthRoutes(app, { config, store, ingest });
   registerSessionRoutes(app, { store, ingest });
+  registerSessionDetailRoutes(app, { store });
   registerActionHistoryRoutes(app, { store });
   registerStreamRoutes(app, { config, store });
 

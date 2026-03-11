@@ -34,7 +34,7 @@ export function SessionListPanel(props: SessionListPanelProps) {
     <div className="panel-content">
       <div className="panel-header">
         <div>
-          <p className="eyebrow">Sessions</p>
+          <p className="eyebrow">Step 1</p>
           <h2>Session list</h2>
         </div>
         <button type="button" className="secondary-button" onClick={props.onRefresh}>
@@ -62,45 +62,50 @@ export function SessionListPanel(props: SessionListPanelProps) {
         </p>
       ) : null}
 
-      {props.sessions.length === 0 ? (
-        <div className="empty-state">
-          <p>No sessions were ingested into the v2 store yet.</p>
-          <p className="supporting-text">
-            Check `sessions.json` availability or wait for the next ingest pass.
-          </p>
-        </div>
-      ) : (
-        <div className="session-list" role="list">
-          {props.sessions.map((session) => {
-            const metadata = getMetadata(session.metadata);
+      <div className="panel-viewport">
+        {props.sessions.length === 0 ? (
+          <div className="empty-state">
+            <p>No sessions were ingested into the v2 store yet.</p>
+            <p className="supporting-text">
+              Check `sessions.json` availability or wait for the next ingest pass.
+            </p>
+          </div>
+        ) : (
+          <div className="session-list" role="list">
+            {props.sessions.map((session) => {
+              const metadata = getMetadata(session.metadata);
 
-            return (
-              <button
-                key={session.id}
-                type="button"
-                className="session-card"
-                aria-pressed={props.selectedSessionId === session.id}
-                onClick={() => props.onSelect(session)}
-              >
-                <div className="session-card-head">
-                  <span className={`status-pill status-${session.status}`}>{session.status}</span>
-                  <span className="supporting-text">
-                    {metadata?.provider ?? 'unknown'} / {metadata?.chatType ?? 'unknown'}
+              return (
+                <button
+                  key={session.id}
+                  type="button"
+                  className="session-card"
+                  aria-pressed={props.selectedSessionId === session.id}
+                  onClick={() => props.onSelect(session)}
+                >
+                  <div className="session-card-head">
+                    <span className={`status-pill status-${session.status}`}>{session.status}</span>
+                    <span className="supporting-text session-provider">
+                      {metadata?.provider ?? 'unknown'} / {metadata?.chatType ?? 'unknown'}
+                    </span>
+                  </div>
+                  <strong className="card-title">{session.title ?? session.id}</strong>
+                  <span className="supporting-text session-id">{session.id}</span>
+                  <span className="supporting-text">Updated {formatTime(session.updatedAt)}</span>
+                  <span className="session-summary">
+                    {session.lastActionSummary ?? 'No derived action summary yet.'}
                   </span>
-                </div>
-                <strong>{session.title ?? session.id}</strong>
-                <span className="supporting-text">Updated {formatTime(session.updatedAt)}</span>
-                <span className="session-summary">
-                  {session.lastActionSummary ?? 'No derived action summary yet.'}
-                </span>
-                {metadata?.firstUserText ? (
-                  <span className="supporting-text">{metadata.firstUserText}</span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      )}
+                  {metadata?.firstUserText ? (
+                    <span className="supporting-text session-first-user">
+                      {metadata.firstUserText}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
