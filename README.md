@@ -149,6 +149,17 @@ npm run v2:dev
 - v2 backend: `http://127.0.0.1:8790`
 - v2 frontend: `http://127.0.0.1:5174`
 
+如果你需要让局域网其他设备也能直接访问 v2，用这个：
+
+```bash
+npm run v2:dev:lan
+```
+
+这会把监听地址改成 `0.0.0.0`，然后你可以从同网段设备访问：
+
+- `http://<这台机器IP>:5174`
+- `http://<这台机器IP>:8790/api/v2/health`
+
 如果你还需要保留 v1，再单独开一个终端跑：
 
 ```bash
@@ -163,13 +174,25 @@ npm start
 ```
 
 ```bash
-# 终端 2：v2 backend
+# 终端 2：v2 backend（仅本机访问）
 npm run v2:server:dev
 ```
 
 ```bash
-# 终端 3：v2 frontend（固定到 5174；若端口被占用会直接报错，不再悄悄漂移）
+# 终端 3：v2 frontend（仅本机访问；固定到 5174，若端口被占用会直接报错）
 npm run v2:web:dev:fixed
+```
+
+局域网访问时，改用：
+
+```bash
+# 终端 2：v2 backend（LAN）
+npm run v2:server:dev:lan
+```
+
+```bash
+# 终端 3：v2 frontend（LAN）
+npm run v2:web:dev:lan
 ```
 
 默认端口：
