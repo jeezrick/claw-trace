@@ -20,6 +20,9 @@ HOST="${HOST:-0.0.0.0}"
 SESSIONS_DIR="${SESSIONS_DIR:-/root/.openclaw/agents/main/sessions}"
 RAW_STREAM_FILE="${RAW_STREAM_FILE:-$HOME/.openclaw/logs/raw-stream.jsonl}"
 RAW_POLL_MS="${RAW_POLL_MS:-700}"
+DATABASE_FILE="${DATABASE_FILE:-$APP_DIR/apps/server/data/claw-trace-v2.sqlite}"
+SERVER_JS="$APP_DIR/apps/server/dist/index.js"
+INSTALL_NEEDS_NPM=0
 
 mkdir -p "$STATE_DIR"
 
@@ -43,28 +46,41 @@ running_pid() {
   return 1
 }
 
+ensure_runtime() {
+  if [[ -f "$SERVER_JS" ]]; then
+    return 0
+  fi
+
+  echo "claw-trace runtime is missing. run: claw-trace update" >&2
+  exit 1
+}
+
 start() {
   if pid="$(running_pid)"; then
     echo "claw-trace already running (pid=$pid)"
     return 0
   fi
 
+  ensure_runtime
+
   nohup env \
+    NODE_ENV=production \
     PORT="$PORT" \
     HOST="$HOST" \
     SESSIONS_DIR="$SESSIONS_DIR" \
     RAW_STREAM_FILE="$RAW_STREAM_FILE" \
-    RAW_POLL_MS="$RAW_POLL_MS" \
-    node "$APP_DIR/server.js" >>"$LOG_FILE" 2>&1 &
+    DATABASE_FILE="$DATABASE_FILE" \
+    node "$SERVER_JS" >>"$LOG_FILE" 2>&1 &
 
   local pid=$!
   echo "$pid" > "$PID_FILE"
-  sleep 0.4
+  sleep 0.8
 
   if kill -0 "$pid" 2>/dev/null; then
     echo "claw-trace started (pid=$pid)"
     echo "url: http://$HOST:$PORT"
     echo "log: $LOG_FILE"
+    echo "db: $DATABASE_FILE"
   else
     echo "failed to start. check log: $LOG_FILE" >&2
     exit 1
@@ -120,6 +136,7 @@ doctor() {
   echo "sessions_dir: $SESSIONS_DIR"
   echo "raw_stream_file: $RAW_STREAM_FILE"
   echo "raw_poll_ms: $RAW_POLL_MS"
+  echo "database_file: $DATABASE_FILE"
   echo
 
   if pid="$(running_pid)"; then
@@ -169,10 +186,10 @@ doctor() {
   fi
 
   if command -v curl >/dev/null 2>&1; then
-    if curl -fsS "http://127.0.0.1:$PORT/api/config" >/dev/null 2>&1; then
-      check_ok "本机 API /api/config 可访问"
+    if curl -fsS "http://127.0.0.1:$PORT/api/v2/health" >/dev/null 2>&1; then
+      check_ok "本机 API /api/v2/health 可访问"
     else
-      check_warn "本机 API /api/config 不可访问（端口/监听可能异常）"
+      check_warn "本机 API /api/v2/health 不可访问（端口/监听可能异常）"
       warned=1
     fi
   else
@@ -226,8 +243,8 @@ update() {
   curl -fsSL "$url" | tar -xz -C "$tmp"
 
   local src="$tmp/trace-service"
-  if [[ ! -f "$src/server.js" ]]; then
-    echo "invalid bundle: server.js missing" >&2
+  if [[ ! -f "$src/claw-trace" ]]; then
+    echo "invalid bundle: claw-trace command missing" >&2
     exit 1
   fi
 
@@ -240,6 +257,13 @@ update() {
   cp -a "$APP_DIR" "$APP_DIR.backup.$(date +%Y%m%d-%H%M%S)"
   cp -a "$src/." "$APP_DIR/"
   chmod +x "$APP_DIR/run.sh" "$APP_DIR/build-bundle.sh" "$APP_DIR/claw-trace" || true
+
+  if command -v npm >/dev/null 2>&1; then
+    (cd "$APP_DIR" && npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false)
+  else
+    echo "npm is required to install runtime dependencies for v2" >&2
+    exit 1
+  fi
 
   echo "updated: $current -> $(version)"
   if [[ "$was_running" == "1" ]]; then

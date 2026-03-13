@@ -8,6 +8,7 @@ import { registerHealthRoutes } from './routes/health';
 import { registerSessionDetailRoutes } from './routes/session-detail';
 import { registerSessionRoutes } from './routes/sessions';
 import { registerStreamRoutes } from './routes/stream';
+import { registerWebRoutes } from './routes/web';
 import { createEventStore } from './store/event-store';
 
 export async function buildServer(config: AppConfig = loadConfig()) {
@@ -31,6 +32,7 @@ export async function buildServer(config: AppConfig = loadConfig()) {
   registerSessionDetailRoutes(app, { store });
   registerActionHistoryRoutes(app, { store });
   registerStreamRoutes(app, { config, store });
+  registerWebRoutes(app);
 
   app.addHook('onClose', async () => {
     ingest.stop();

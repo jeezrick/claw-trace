@@ -9,7 +9,10 @@
     "apps/web"
   ],
   "scripts": {
-    "start": "node server.js",
+    "start": "npm run v2:start",
+    "v2:start": "npm run v2:server:start",
+    "v2:server:prepare": "npm run v2:build && npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false",
+    "v2:release:local": "npm run v2:server:prepare",
     "v2:server:dev": "npm run dev --workspace @claw-trace/server",
     "v2:server:dev:lan": "HOST=0.0.0.0 npm run dev --workspace @claw-trace/server",
     "v2:server:start": "npm run start --workspace @claw-trace/server",

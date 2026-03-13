@@ -49,6 +49,11 @@ cp -a "$SRC/." "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/claw-trace" "$INSTALL_DIR/run.sh" || true
 ln -sf "$INSTALL_DIR/claw-trace" "$BIN_DIR/claw-trace"
 
+if [[ ! -d "$INSTALL_DIR/node_modules/better-sqlite3" ]]; then
+  echo "[claw-trace] runtime dependencies missing after install" >&2
+  exit 1
+fi
+
 echo "[claw-trace] installed to $INSTALL_DIR"
 echo "[claw-trace] command linked: $BIN_DIR/claw-trace"
 echo "[claw-trace] if command not found, add to PATH: export PATH=\"$BIN_DIR:\$PATH\""

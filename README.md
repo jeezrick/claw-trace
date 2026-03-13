@@ -2,25 +2,24 @@
 
 把 OpenClaw session 链路网页做成可访问服务。
 
+## 现状
+
+**v1 已被完全取代。**
+
+现在 `claw-trace start / update / rollback` 走的都是 **v2 单服务版本**：
+
+- `apps/server/`：Fastify + SQLite backend
+- `apps/web/dist`：React 前端构建产物，由 v2 backend 直接静态托管
+- 默认访问地址：`http://<机器IP>:8787`
+- 默认健康检查：`http://127.0.0.1:8787/api/v2/health`
+
+也就是说，现在不再需要单独跑 `server.js + public/` 的 v1 方案了。
+
 ## 目录
 
-- `public/` 前端页面（index.html / styles.css / app.js）
-- `server.js` 轻量 HTTP 服务 + API
-- `apps/server/` v2 Fastify + SQLite + zod backend
+- `apps/server/` v2 Fastify + SQLite backend
 - `apps/web/` v2 React + Vite + Zustand frontend
 - `docs/adr/0001-v2-architecture.md` v2 架构 ADR / 迁移计划
-
-## v2 Phase 1（本分支）
-
-`refactor/v2-architecture` 分支当前提供一个**不替换 v1** 的并行 v2 phase-1 纵切面：
-
-- v1 仍然使用现有 `server.js + public/` 路径
-- v2 新代码全部放在 `apps/server` 和 `apps/web`
-- v2 backend 启动后会 ingest 当前 OpenClaw 数据源到 SQLite
-- v2 web 会实际消费 API，渲染 session list / action history / raw debug stream
-  - debug stream 支持 `全部 session / 当前选中 session` 显式 scope 切换（按 `sessionId` best-effort 过滤）
-  - action history 后台刷新保持可见内容并短暂高亮新到达的 action
-  - session 选中态在轮询刷新时会保留 last-known snapshot，减少跳选
 
 ### 当前能力
 
@@ -87,6 +86,40 @@ claw-trace status
 
 访问：`http://<对方机器IP>:8787`
 
+## 运行方式（正式）
+
+### 本机开发
+
+```bash
+cd /root/code/claw-trace
+npm install
+npm run v2:dev:lan
+```
+
+开发预览地址：
+
+- 前端：`http://<机器IP>:5174`
+- 后端健康检查：`http://<机器IP>:8790/api/v2/health`
+
+### 正式运行 / 安装后运行
+
+```bash
+claw-trace start
+```
+
+默认会启动 **v2 单服务**，由后端直接托管前端静态资源：
+
+- 页面：`http://<机器IP>:8787`
+- 健康检查：`http://127.0.0.1:8787/api/v2/health`
+
+### 更新
+
+```bash
+claw-trace update
+```
+
+更新后如果服务原本在运行，会自动重启到最新 v2 版本。
+
 ## 命令行用法（支持 update）
 
 ```bash
@@ -120,16 +153,7 @@ git push origin main --tags
 
 之后你只需把安装命令里的版本号改成新 tag 即可（如 `v1.0.1`）。
 
-## 本机启动
-
-```bash
-cd /root/code/claw-trace
-node server.js
-```
-
-默认监听：`0.0.0.0:8787`
-
-## 本地并行运行 v1 + v2
+## 本机开发运行
 
 先安装 workspace 依赖：
 
@@ -138,7 +162,7 @@ cd /root/code/claw-trace
 npm install
 ```
 
-### 最省事：直接跑 v2 双进程
+### 最省事：直接跑 v2 双进程开发模式
 
 ```bash
 npm run v2:dev
@@ -149,7 +173,7 @@ npm run v2:dev
 - v2 backend: `http://127.0.0.1:8790`
 - v2 frontend: `http://127.0.0.1:5174`
 
-如果你需要让局域网其他设备也能直接访问 v2，用这个：
+如果你需要让局域网其他设备也能直接访问，用这个：
 
 ```bash
 npm run v2:dev:lan
@@ -160,59 +184,7 @@ npm run v2:dev:lan
 - `http://<这台机器IP>:5174`
 - `http://<这台机器IP>:8790/api/v2/health`
 
-如果你还需要保留 v1，再单独开一个终端跑：
-
-```bash
-npm start
-```
-
-### 手动分终端运行
-
-```bash
-# 终端 1：v1（可选，保持现有路径）
-npm start
-```
-
-```bash
-# 终端 2：v2 backend（仅本机访问）
-npm run v2:server:dev
-```
-
-```bash
-# 终端 3：v2 frontend（仅本机访问；固定到 5174，若端口被占用会直接报错）
-npm run v2:web:dev:fixed
-```
-
-局域网访问时，改用：
-
-```bash
-# 终端 2：v2 backend（LAN）
-npm run v2:server:dev:lan
-```
-
-```bash
-# 终端 3：v2 frontend（LAN）
-npm run v2:web:dev:lan
-```
-
-默认端口：
-
-- v1: `http://127.0.0.1:8787`
-- v2 backend: `http://127.0.0.1:8790`
-- v2 frontend: `http://127.0.0.1:5174`
-
-说明：
-
-- v2 web 开发服务器会把 `/api` 代理到 v2 backend
-- v2 SQLite 默认文件：`apps/server/data/claw-trace-v2.sqlite`
-- v2 backend 启动时会先执行一次初始 ingest，然后按轮询周期刷新 sessions/raw-stream
-- v2 当前接口：
-  - `GET /api/v2/health`
-  - `GET /api/v2/sessions`
-  - `GET /api/v2/sessions/:sessionId/actions`
-  - `GET /api/v2/stream`
-
-如需构建：
+### 正式构建
 
 ```bash
 npm run v2:build
@@ -225,15 +197,28 @@ npm run v2:server:build
 npm run v2:web:build
 ```
 
-验证时可以直接打开：
+### 正式单服务运行（本地仓库内）
 
-- v2 backend health: `http://127.0.0.1:8790/api/v2/health`
-- v2 frontend: `http://127.0.0.1:5174`
+```bash
+npm start
+```
+
+或者：
+
+```bash
+npm run v2:start
+```
+
+这时启动的是 **v2 单服务**，页面由 backend 直接托管，访问：
+
+- `http://127.0.0.1:8787`
+- `http://127.0.0.1:8787/api/v2/health`
 
 ## 环境变量
 
 - `PORT`：端口（默认 `8787`）
 - `HOST`：监听地址（默认 `0.0.0.0`）
+- `DATABASE_FILE`：SQLite 文件路径（默认 `apps/server/data/claw-trace-v2.sqlite`）
 - `SESSIONS_DIR`：session 数据目录（默认 `/root/.openclaw/agents/main/sessions`）
 - `RAW_STREAM_FILE`：raw stream 日志路径（默认 `~/.openclaw/logs/raw-stream.jsonl`）
 - `RAW_POLL_MS`：轮询间隔毫秒（默认 `700`）
