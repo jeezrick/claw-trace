@@ -19,10 +19,6 @@ cp -r "$ROOT_DIR/apps/web/dist" "$TMP_DIR/trace-service/apps/web/dist"
 cp "$ROOT_DIR/apps/server/package.json" "$TMP_DIR/trace-service/apps/server/package.json"
 cp "$ROOT_DIR/package.json" "$ROOT_DIR/package-lock.json" "$ROOT_DIR/run.sh" "$ROOT_DIR/README.md" "$ROOT_DIR/VERSION" "$ROOT_DIR/claw-trace" "$ROOT_DIR/install.sh" "$TMP_DIR/trace-service/"
 
-cd "$TMP_DIR/trace-service"
-npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false >/dev/null
-rm -f package-lock.json
-
 tar -C "$TMP_DIR" -czf "$OUT" trace-service
 
 echo "Bundle generated: $OUT"

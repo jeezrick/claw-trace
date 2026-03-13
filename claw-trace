@@ -248,6 +248,11 @@ update() {
     exit 1
   fi
 
+  if [[ ! -f "$src/package-lock.json" ]]; then
+    echo "invalid bundle: package-lock.json missing" >&2
+    exit 1
+  fi
+
   local was_running=0
   if running_pid >/dev/null; then
     was_running=1
@@ -259,6 +264,7 @@ update() {
   chmod +x "$APP_DIR/run.sh" "$APP_DIR/build-bundle.sh" "$APP_DIR/claw-trace" || true
 
   if command -v npm >/dev/null 2>&1; then
+    echo "installing runtime dependencies for this machine"
     (cd "$APP_DIR" && npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false)
   else
     echo "npm is required to install runtime dependencies for v2" >&2
