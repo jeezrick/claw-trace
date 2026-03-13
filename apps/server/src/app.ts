@@ -9,6 +9,7 @@ import { registerSessionDetailRoutes } from './routes/session-detail';
 import { registerSessionRoutes } from './routes/sessions';
 import { registerStreamRoutes } from './routes/stream';
 import { registerWebRoutes } from './routes/web';
+import { registerWorkspaceRoutes } from './routes/workspaces';
 import { createEventStore } from './store/event-store';
 
 export async function buildServer(config: AppConfig = loadConfig()) {
@@ -28,9 +29,10 @@ export async function buildServer(config: AppConfig = loadConfig()) {
   ingest.start();
 
   registerHealthRoutes(app, { config, store, ingest });
-  registerSessionRoutes(app, { store, ingest });
-  registerSessionDetailRoutes(app, { store });
-  registerActionHistoryRoutes(app, { store });
+  registerWorkspaceRoutes(app, { config });
+  registerSessionRoutes(app, { config, store, ingest });
+  registerSessionDetailRoutes(app, { config, store });
+  registerActionHistoryRoutes(app, { config, store });
   registerStreamRoutes(app, { config, store });
   registerWebRoutes(app);
 

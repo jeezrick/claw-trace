@@ -5,6 +5,7 @@ type SessionListPanelProps = {
   sessions: SessionSummary[];
   selectedSessionId: string | null;
   selectedSessionMissing: boolean;
+  selectedWorkspaceId: string;
   state: LoadState;
   refreshing: boolean;
   lastLoadedAt: number | null;
@@ -44,6 +45,9 @@ export function SessionListPanel(props: SessionListPanelProps) {
 
       <div className="supporting-row">
         <span className="supporting-text">
+          Workspace: <strong>{props.selectedWorkspaceId}</strong>
+        </span>
+        <span className="supporting-text">
           State: <strong>{props.state}</strong>
         </span>
         <span className="supporting-text">Count: {props.sessions.length}</span>
@@ -57,17 +61,17 @@ export function SessionListPanel(props: SessionListPanelProps) {
       {props.error ? <p className="error-text">{props.error}</p> : null}
       {props.selectedSessionMissing ? (
         <p className="supporting-text">
-          The selected session is missing from the latest ingest snapshot. The current selection is
-          pinned until it reappears or you choose another session.
+          The selected session is missing from the latest workspace snapshot. The current selection
+          is pinned until it reappears or you choose another session.
         </p>
       ) : null}
 
       <div className="panel-viewport">
         {props.sessions.length === 0 ? (
           <div className="empty-state">
-            <p>No sessions were ingested into the v2 store yet.</p>
+            <p>No sessions were found for this agent workspace yet.</p>
             <p className="supporting-text">
-              Check `sessions.json` availability or wait for the next ingest pass.
+              Switch workspace, wait for the next run, or check that `sessions.json` exists.
             </p>
           </div>
         ) : (

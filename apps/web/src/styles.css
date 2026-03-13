@@ -131,9 +131,23 @@ pre {
   padding: 0.9rem 1rem;
 }
 
+.meta-card-select {
+  min-width: 15rem;
+}
+
 .meta-card code,
 .meta-card span:last-child {
   overflow-wrap: anywhere;
+}
+
+.meta-select {
+  width: 100%;
+  border: 1px solid var(--panel-border-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  padding: 0.6rem 0.75rem;
+  font: inherit;
 }
 
 .meta-label,

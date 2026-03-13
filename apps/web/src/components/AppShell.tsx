@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import type { AgentWorkspaceOption } from '../lib/api';
 import type { WorkspaceTab } from '../store/app-store';
 
 type AppShellProps = {
@@ -9,7 +10,10 @@ type AppShellProps = {
   debugPanel: ReactNode;
   selectedSessionId: string | null;
   selectedTerminalLabel: string | null;
+  selectedWorkspaceId: string;
+  workspaceOptions: AgentWorkspaceOption[];
   workspaceTab: WorkspaceTab;
+  onWorkspaceChange: (workspaceId: string) => void;
   onTabChange: (tab: WorkspaceTab) => void;
 };
 
@@ -30,12 +34,26 @@ export function AppShell(props: AppShellProps) {
           <p className="eyebrow">OpenClaw internal console</p>
           <h1>claw-trace v2</h1>
           <p className="shell-lede">
-            Default IA follows the v1 path: choose a session, pick a terminal message, then inspect
-            the agentic chain that produced it.
+            Choose an agent workspace, then inspect sessions, terminal messages, and agentic
+            chains from that OpenClaw agent.
           </p>
         </div>
 
         <div className="header-meta">
+          <label className="meta-card meta-card-select">
+            <span className="meta-label">Agent workspace</span>
+            <select
+              className="meta-select"
+              value={props.selectedWorkspaceId}
+              onChange={(event) => props.onWorkspaceChange(event.target.value)}
+            >
+              {props.workspaceOptions.map((workspace) => (
+                <option key={workspace.id} value={workspace.id}>
+                  {workspace.label} ({workspace.sessionCount})
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="meta-card">
             <span className="meta-label">Session</span>
             <code>{props.selectedSessionId ?? 'none'}</code>
@@ -75,8 +93,8 @@ export function AppShell(props: AppShellProps) {
               ))}
             </div>
             <p className="supporting-text">
-              `Action history` and `Realtime debug` stay available without replacing the primary
-              session to terminal to chain workflow.
+              Sessions now follow the selected OpenClaw agent workspace instead of always pinning to
+              `main`.
             </p>
           </div>
 

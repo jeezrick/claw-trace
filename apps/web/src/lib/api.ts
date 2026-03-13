@@ -114,6 +114,21 @@ export type StreamReadyEvent = {
   sessionId: string | null;
   resumeCursor: number;
   latestCursor: number;
+  workspace?: string;
+};
+
+export type AgentWorkspaceOption = {
+  id: string;
+  label: string;
+  sessionsDir: string;
+  sessionsIndexFile: string;
+  sessionCount: number;
+  isDefault: boolean;
+};
+
+export type WorkspaceListResponse = {
+  items: AgentWorkspaceOption[];
+  defaultWorkspaceId: string;
 };
 
 export type SessionListResponse = {
@@ -125,6 +140,7 @@ export type SessionListResponse = {
     actionEventCount: number;
     rawStreamCount: number;
     latestStreamCursor: number;
+    workspaceId?: string;
     ingest: {
       initialLoadCompleted: boolean;
       lastSessionSyncAt: number | null;
@@ -153,6 +169,21 @@ export type SessionDetailResponse = {
 
 const apiBase = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 
+function buildQuery(params: Record<string, string | number | undefined>) {
+  const query = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === '') {
+      continue;
+    }
+
+    query.set(key, String(value));
+  }
+
+  const text = query.toString();
+  return text ? `?${text}` : '';
+}
+
 async function fetchJson<T>(pathname: string): Promise<T> {
   const response = await fetch(`${apiBase}${pathname}`);
 
@@ -163,38 +194,40 @@ async function fetchJson<T>(pathname: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export function listSessions(limit = 50) {
-  return fetchJson<SessionListResponse>(`/api/v2/sessions?limit=${limit}`);
+export function listWorkspaces() {
+  return fetchJson<WorkspaceListResponse>('/api/v2/workspaces');
 }
 
-export function getActionHistory(sessionId: string, limit = 100) {
-  return fetchJson<ActionHistoryResponse>(
-    `/api/v2/sessions/${encodeURIComponent(sessionId)}/actions?limit=${limit}`
+export function listSessions(limit = 50, workspace?: string) {
+  return fetchJson<SessionListResponse>(
+    `/api/v2/sessions${buildQuery({ limit, workspace })}`
   );
 }
 
-export function getSessionDetail(sessionId: string) {
+export function getActionHistory(sessionId: string, limit = 100, workspace?: string) {
+  return fetchJson<ActionHistoryResponse>(
+    `/api/v2/sessions/${encodeURIComponent(sessionId)}/actions${buildQuery({ limit, workspace })}`
+  );
+}
+
+export function getSessionDetail(sessionId: string, workspace?: string) {
   return fetchJson<SessionDetailResponse>(
-    `/api/v2/sessions/${encodeURIComponent(sessionId)}/detail`
+    `/api/v2/sessions/${encodeURIComponent(sessionId)}/detail${buildQuery({ workspace })}`
   );
 }
 
 export function createDebugEventSource(options: {
   sessionId?: string;
   cursor?: number;
+  workspace?: string;
 } = {}) {
-  const params = new URLSearchParams();
+  const query = buildQuery({
+    sessionId: options.sessionId,
+    cursor: options.cursor,
+    workspace: options.workspace,
+  });
 
-  if (options.sessionId) {
-    params.set('sessionId', options.sessionId);
-  }
-
-  if (typeof options.cursor === 'number') {
-    params.set('cursor', String(options.cursor));
-  }
-
-  const query = params.toString();
-  return new EventSource(`${apiBase}/api/v2/stream${query ? `?${query}` : ''}`);
+  return new EventSource(`${apiBase}/api/v2/stream${query}`);
 }
 
 export function parseEventData<T>(event: MessageEvent<string>): T {

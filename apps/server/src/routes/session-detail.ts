@@ -1,10 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 
-import { ActionHistoryParamsSchema } from '../domain/events';
-import { buildSessionDetail } from '../domain/session-detail';
+import type { AppConfig } from '../config';
+import { ActionHistoryParamsSchema, WorkspaceSelectionQuerySchema } from '../domain/events';
 import type { EventStore } from '../store/event-store';
+import { getDefaultWorkspaceId, getSessionBundleForWorkspace } from '../workspaces';
 
 type SessionDetailDependencies = {
+  config: AppConfig;
   store: EventStore;
 };
 
@@ -14,24 +16,35 @@ export function registerSessionDetailRoutes(
 ) {
   app.get('/api/v2/sessions/:sessionId/detail', async (request, reply) => {
     const params = ActionHistoryParamsSchema.safeParse(request.params);
+    const query = WorkspaceSelectionQuerySchema.safeParse(request.query);
 
-    if (!params.success) {
+    if (!params.success || !query.success) {
       reply.code(400);
       return {
         error: 'Invalid session detail request',
-        issues: params.error.flatten(),
+        issues: {
+          params: params.success ? null : params.error.flatten(),
+          query: query.success ? null : query.error.flatten(),
+        },
       };
     }
 
-    const session = deps.store.getSession(params.data.sessionId);
-    const actions = deps.store.listAllActionHistory(params.data.sessionId);
-    const detail = buildSessionDetail(session, actions);
+    const workspaceId = query.data.workspace ?? getDefaultWorkspaceId(deps.config);
 
-    return {
-      sessionId: params.data.sessionId,
-      session: detail.session,
-      terminalMessages: detail.terminalMessages,
-      ingestReady: true,
-    };
+    try {
+      const bundle = getSessionBundleForWorkspace(deps.config, workspaceId, params.data.sessionId);
+
+      return {
+        sessionId: params.data.sessionId,
+        session: bundle.session,
+        terminalMessages: bundle.terminalMessages,
+        ingestReady: true,
+      };
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: error instanceof Error ? error.message : 'Unknown workspace error',
+      };
+    }
   });
 }

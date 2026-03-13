@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AppConfig } from '../config';
 import { StreamQuerySchema, type RawDebugEvent } from '../domain/events';
 import type { EventStore } from '../store/event-store';
+import { getDefaultWorkspaceId, listWorkspaceSessionIds, resolveWorkspaceConfig } from '../workspaces';
 
 type StreamDependencies = {
   config: AppConfig;
@@ -34,6 +35,26 @@ function resolveResumeCursor(rawValue: string | string[] | undefined): number | 
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
+function filterWorkspaceEvents(events: RawDebugEvent[], workspaceSessionIds: Set<string> | null) {
+  if (!workspaceSessionIds) {
+    return events;
+  }
+
+  return events.filter((event) => Boolean(event.sessionId && workspaceSessionIds.has(event.sessionId)));
+}
+
+function readWorkspaceEvents(
+  store: EventStore,
+  cursor: number,
+  limit: number,
+  sessionId?: string,
+  workspaceSessionIds: Set<string> | null = null
+) {
+  const fetchLimit = workspaceSessionIds ? Math.max(limit * 6, limit, 300) : limit;
+  const events = store.listRawStreamEntriesAfter(cursor, fetchLimit, sessionId);
+  return filterWorkspaceEvents(events, workspaceSessionIds).slice(0, limit);
+}
+
 function sendBackfill(response: NodeJS.WritableStream, events: RawDebugEvent[]): number {
   let lastCursor = 0;
 
@@ -57,12 +78,29 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
       };
     }
 
+    const workspaceId = parsed.data.workspace ?? getDefaultWorkspaceId(deps.config);
+    let workspaceSessionIds: Set<string> | null = null;
+
+    if (!parsed.data.sessionId) {
+      try {
+        resolveWorkspaceConfig(deps.config, workspaceId);
+        workspaceSessionIds = new Set(listWorkspaceSessionIds(deps.config, workspaceId));
+      } catch (error) {
+        reply.code(400);
+        return {
+          error: error instanceof Error ? error.message : 'Unknown workspace error',
+        };
+      }
+    }
+
     const lastEventId = resolveResumeCursor(request.headers['last-event-id']);
     const resumeCursor = parsed.data.cursor ?? lastEventId ?? 0;
-    const backfill = deps.store.listRawStreamEntriesAfter(
+    const backfill = readWorkspaceEvents(
+      deps.store,
       resumeCursor,
       parsed.data.limit,
-      parsed.data.sessionId
+      parsed.data.sessionId,
+      workspaceSessionIds
     );
     let lastCursor = resumeCursor;
     let pollTimer: NodeJS.Timeout | null = null;
@@ -86,6 +124,7 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
       sessionId: parsed.data.sessionId ?? null,
       resumeCursor: lastCursor,
       latestCursor: deps.store.getLatestRawStreamCursor(parsed.data.sessionId),
+      workspace: workspaceId,
     });
 
     const heartbeat = setInterval(() => {
@@ -96,10 +135,12 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
     }, deps.config.sseHeartbeatMs);
 
     pollTimer = setInterval(() => {
-      const events = deps.store.listRawStreamEntriesAfter(
+      const events = readWorkspaceEvents(
+        deps.store,
         lastCursor,
         parsed.data.limit,
-        parsed.data.sessionId
+        parsed.data.sessionId,
+        workspaceSessionIds
       );
 
       if (events.length === 0) {

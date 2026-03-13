@@ -17,7 +17,7 @@ const MAX_SUMMARY_CHARS = 220;
 
 type JsonRecord = Record<string, unknown>;
 
-type SessionIndexEntry = {
+export type SessionIndexEntry = {
   sessionKey: string;
   sessionId: string;
   sessionFilePath: string;
@@ -267,7 +267,7 @@ function toTitle(entry: JsonRecord, sessionKey: string, sessionId: string): stri
   );
 }
 
-function parseSessionsIndex(config: AppConfig): SessionIndexEntry[] {
+export function parseSessionsIndex(config: AppConfig): SessionIndexEntry[] {
   if (!fs.existsSync(config.sessionsIndexFile)) {
     throw new Error(`sessions index missing at ${config.sessionsIndexFile}`);
   }
@@ -318,7 +318,7 @@ function parseSessionsIndex(config: AppConfig): SessionIndexEntry[] {
     .sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
-function parseJsonlRows(filePath: string): JsonRecord[] {
+export function parseJsonlRows(filePath: string): JsonRecord[] {
   if (!fs.existsSync(filePath)) {
     return [];
   }
@@ -357,7 +357,7 @@ function pushAction(
   });
 }
 
-function buildActions(sessionId: string, rows: JsonRecord[]): ActionWriteInput[] {
+export function buildActions(sessionId: string, rows: JsonRecord[]): ActionWriteInput[] {
   const actions: ActionWriteInput[] = [];
 
   for (const row of rows) {
@@ -553,7 +553,7 @@ function buildActions(sessionId: string, rows: JsonRecord[]): ActionWriteInput[]
   return actions;
 }
 
-function buildSessionRecord(
+export function buildSessionRecord(
   entry: SessionIndexEntry,
   rows: JsonRecord[],
   actions: ActionWriteInput[],

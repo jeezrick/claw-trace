@@ -99,12 +99,18 @@ export const RawDebugEventSchema = z.object({
   payload: z.unknown(),
 });
 
+export const WorkspaceSelectionQuerySchema = z.object({
+  workspace: z.string().min(1).optional(),
+});
+
 export const SessionListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  workspace: z.string().min(1).optional(),
 });
 
 export const ActionHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
+  workspace: z.string().min(1).optional(),
 });
 
 export const ActionHistoryParamsSchema = z.object({
@@ -114,6 +120,7 @@ export const ActionHistoryParamsSchema = z.object({
 export const StreamQuerySchema = z.object({
   cursor: z.coerce.number().int().nonnegative().optional(),
   sessionId: z.string().min(1).optional(),
+  workspace: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 

@@ -1,12 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 
-import {
-  ActionHistoryParamsSchema,
-  ActionHistoryQuerySchema,
-} from '../domain/events';
+import type { AppConfig } from '../config';
+import { ActionHistoryParamsSchema, ActionHistoryQuerySchema } from '../domain/events';
 import type { EventStore } from '../store/event-store';
+import { getDefaultWorkspaceId, getSessionBundleForWorkspace } from '../workspaces';
 
 type ActionHistoryDependencies = {
+  config: AppConfig;
   store: EventStore;
 };
 
@@ -29,13 +29,22 @@ export function registerActionHistoryRoutes(
       };
     }
 
-    const session = deps.store.getSession(params.data.sessionId);
+    const workspaceId = query.data.workspace ?? getDefaultWorkspaceId(deps.config);
 
-    return {
-      sessionId: params.data.sessionId,
-      session,
-      items: deps.store.listActionHistory(params.data.sessionId, query.data.limit),
-      ingestReady: true,
-    };
+    try {
+      const bundle = getSessionBundleForWorkspace(deps.config, workspaceId, params.data.sessionId);
+
+      return {
+        sessionId: params.data.sessionId,
+        session: bundle.session,
+        items: bundle.actions.slice(-query.data.limit),
+        ingestReady: true,
+      };
+    } catch (error) {
+      reply.code(400);
+      return {
+        error: error instanceof Error ? error.message : 'Unknown workspace error',
+      };
+    }
   });
 }

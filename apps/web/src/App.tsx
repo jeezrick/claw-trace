@@ -1,4 +1,4 @@
-import { startTransition, useEffect } from 'react';
+import { startTransition, useEffect, useMemo, useState } from 'react';
 
 import { ActionHistoryPanel } from './components/ActionHistoryPanel';
 import { AppShell } from './components/AppShell';
@@ -11,7 +11,9 @@ import {
   getActionHistory,
   getSessionDetail,
   listSessions,
+  listWorkspaces,
   parseEventData,
+  type AgentWorkspaceOption,
   type RawDebugEvent,
   type StreamReadyEvent,
 } from './lib/api';
@@ -80,6 +82,26 @@ export default function App() {
   const resetDebugStream = useAppStore((state) => state.resetDebugStream);
   const setWorkspaceTab = useAppStore((state) => state.setWorkspaceTab);
 
+  const [workspaceOptions, setWorkspaceOptions] = useState<AgentWorkspaceOption[]>([]);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('main');
+
+  const normalizedWorkspaceOptions = useMemo(() => {
+    if (workspaceOptions.length > 0) {
+      return workspaceOptions;
+    }
+
+    return [
+      {
+        id: selectedWorkspaceId,
+        label: selectedWorkspaceId,
+        sessionsDir: '',
+        sessionsIndexFile: '',
+        sessionCount: 0,
+        isDefault: selectedWorkspaceId === 'main',
+      },
+    ];
+  }, [selectedWorkspaceId, workspaceOptions]);
+
   const liveSelectedSession =
     sessions.find((session) => session.id === selectedSessionId) ?? null;
   const selectedSession =
@@ -92,11 +114,40 @@ export default function App() {
   const effectiveStreamSessionId =
     debugStreamScope === 'selected' ? selectedSessionId ?? undefined : undefined;
 
+  async function refreshWorkspaces() {
+    try {
+      const response = await listWorkspaces();
+      startTransition(() => {
+        setWorkspaceOptions(response.items);
+        setSelectedWorkspaceId((current) => {
+          if (response.items.some((item) => item.id === current)) {
+            return current;
+          }
+
+          return response.defaultWorkspaceId ?? response.items[0]?.id ?? 'main';
+        });
+      });
+    } catch (_error) {
+      startTransition(() => {
+        setWorkspaceOptions([
+          {
+            id: 'main',
+            label: 'main',
+            sessionsDir: '',
+            sessionsIndexFile: '',
+            sessionCount: 0,
+            isDefault: true,
+          },
+        ]);
+      });
+    }
+  }
+
   async function refreshSessions(options: { silent?: boolean } = {}) {
     useAppStore.getState().setSessionsLoading({ silent: options.silent });
 
     try {
-      const response = await listSessions(100);
+      const response = await listSessions(100, selectedWorkspaceId);
       startTransition(() => {
         useAppStore.getState().setSessions(response.items);
       });
@@ -109,7 +160,7 @@ export default function App() {
     setSessionDetailLoading({ silent: options.silent });
 
     try {
-      const response = await getSessionDetail(sessionId);
+      const response = await getSessionDetail(sessionId, selectedWorkspaceId);
 
       if (useAppStore.getState().selectedSessionId !== sessionId) {
         return;
@@ -132,7 +183,7 @@ export default function App() {
     useAppStore.getState().setActionHistoryLoading({ silent: options.silent });
 
     try {
-      const response = await getActionHistory(sessionId);
+      const response = await getActionHistory(sessionId, 100, selectedWorkspaceId);
 
       if (useAppStore.getState().selectedSessionId !== sessionId) {
         return;
@@ -152,6 +203,12 @@ export default function App() {
   }
 
   useEffect(() => {
+    void refreshWorkspaces();
+  }, []);
+
+  useEffect(() => {
+    selectSession(null);
+    resetDebugStream();
     void refreshSessions();
 
     const intervalId = window.setInterval(() => {
@@ -161,7 +218,7 @@ export default function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [selectedWorkspaceId]);
 
   useEffect(() => {
     if (!selectedSessionId) {
@@ -181,7 +238,7 @@ export default function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [selectedSessionId]);
+  }, [selectedSessionId, selectedWorkspaceId]);
 
   useEffect(() => {
     let disposed = false;
@@ -191,6 +248,7 @@ export default function App() {
 
     const eventSource = createDebugEventSource({
       sessionId: effectiveStreamSessionId,
+      workspace: selectedWorkspaceId,
     });
 
     eventSource.addEventListener('open', () => {
@@ -248,6 +306,7 @@ export default function App() {
     appendDebugEvent,
     effectiveStreamSessionId,
     resetDebugStream,
+    selectedWorkspaceId,
     setStreamError,
     setStreamReady,
     setStreamStatus,
@@ -261,17 +320,22 @@ export default function App() {
           ? `${selectedTerminal.pending ? 'Pending' : 'Reply'} #${selectedTerminal.ordinal}`
           : null
       }
+      selectedWorkspaceId={selectedWorkspaceId}
+      workspaceOptions={workspaceOptions}
       workspaceTab={workspaceTab}
+      onWorkspaceChange={setSelectedWorkspaceId}
       onTabChange={setWorkspaceTab}
       sessionPanel={
         <SessionListPanel
           sessions={sessions}
           selectedSessionId={selectedSessionId}
+          selectedWorkspaceId={selectedWorkspaceId}
           state={sessionsState}
           refreshing={sessionsRefreshing}
           lastLoadedAt={sessionsLastLoadedAt}
           error={sessionsError}
           onRefresh={() => {
+            void refreshWorkspaces();
             void refreshSessions();
             if (selectedSessionId) {
               void loadSessionDetail(selectedSessionId, { silent: true });
