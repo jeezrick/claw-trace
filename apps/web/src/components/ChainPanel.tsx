@@ -145,73 +145,7 @@ export function ChainPanel(props: ChainPanelProps) {
         </span>
       </div>
 
-      {terminal ? (
-        <>
-          <div className="supporting-block supporting-block-start">
-            <strong className="card-title">
-              {terminal.pending ? 'Pending reply window' : `Reply window #${terminal.ordinal}`}
-            </strong>
-            <span className="supporting-text">
-              Session {props.session?.title ?? props.session?.id ?? 'unknown'}
-            </span>
-            <span className="supporting-text">
-              Sequence span {terminal.startSequence}-{terminal.endSequence} · captured{' '}
-              {formatTime(terminal.timestamp)}
-            </span>
-          </div>
-
-          <div className="chain-summary">
-            <p className="chain-context">
-              {terminal.pending
-                ? 'This window ends at the current user turn and has not produced a final assistant reply yet.'
-                : 'This window contains the normalized user, thinking, tool, and reply steps that produced the selected terminal message.'}
-            </p>
-
-            <div className="reply-preview">
-              {terminal.pending ? `Awaiting reply: ${terminal.fullText}` : terminal.fullText}
-            </div>
-
-            {terminal.triggerUserText ? (
-              <p className="chain-context">Trigger message: {terminal.triggerUserText}</p>
-            ) : null}
-
-            <div className="summary-row">
-              {buildSummaryPills(terminal.summary).map((item) => (
-                <span key={item.label} className="summary-pill">
-                  {item.label} {item.value}
-                </span>
-              ))}
-            </div>
-
-            <div className="summary-row">
-              {terminal.summary.tools.length > 0 ? (
-                terminal.summary.tools.map((tool) => (
-                  <span key={tool} className="summary-pill summary-pill-accent">
-                    tool: {tool}
-                  </span>
-                ))
-              ) : (
-                <span className="summary-pill">No tool calls</span>
-              )}
-            </div>
-
-            {collapsibleStepIds.length > 0 ? (
-              <div className="summary-row summary-row-actions">
-                <span className="supporting-text">
-                  {collapsibleStepIds.length} long {collapsibleStepIds.length === 1 ? 'step' : 'steps'}
-                </span>
-                <button
-                  type="button"
-                  className="source-button source-button-secondary"
-                  onClick={() => setAllStepsExpanded(!allExpandableStepsExpanded)}
-                >
-                  {allExpandableStepsExpanded ? '收起全部' : '展开全部'}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </>
-      ) : (
+      {!terminal && (
         <div className="empty-state">
           <p>Select a terminal message to inspect its agentic chain.</p>
           <p className="supporting-text">
@@ -223,9 +157,74 @@ export function ChainPanel(props: ChainPanelProps) {
 
       <div className="panel-viewport chain-viewport">
         {terminal ? (
-          terminal.steps.length > 0 ? (
-            <ol className="chain-list">
-              {terminal.steps.map((step) => {
+          <>
+            <div className="supporting-block supporting-block-start">
+              <strong className="card-title">
+                {terminal.pending ? 'Pending reply window' : `Reply window #${terminal.ordinal}`}
+              </strong>
+              <span className="supporting-text">
+                Session {props.session?.title ?? props.session?.id ?? 'unknown'}
+              </span>
+              <span className="supporting-text">
+                Sequence span {terminal.startSequence}-{terminal.endSequence} · captured{' '}
+                {formatTime(terminal.timestamp)}
+              </span>
+            </div>
+
+            <div className="chain-summary">
+              <p className="chain-context">
+                {terminal.pending
+                  ? 'This window ends at the current user turn and has not produced a final assistant reply yet.'
+                  : 'This window contains the normalized user, thinking, tool, and reply steps that produced the selected terminal message.'}
+              </p>
+
+              <div className="reply-preview">
+                {terminal.pending ? `Awaiting reply: ${terminal.fullText}` : terminal.fullText}
+              </div>
+
+              {terminal.triggerUserText ? (
+                <p className="chain-context">Trigger message: {terminal.triggerUserText}</p>
+              ) : null}
+
+              <div className="summary-row">
+                {buildSummaryPills(terminal.summary).map((item) => (
+                  <span key={item.label} className="summary-pill">
+                    {item.label} {item.value}
+                  </span>
+                ))}
+              </div>
+
+              <div className="summary-row">
+                {terminal.summary.tools.length > 0 ? (
+                  terminal.summary.tools.map((tool) => (
+                    <span key={tool} className="summary-pill summary-pill-accent">
+                      tool: {tool}
+                    </span>
+                  ))
+                ) : (
+                  <span className="summary-pill">No tool calls</span>
+                )}
+              </div>
+
+              {collapsibleStepIds.length > 0 ? (
+                <div className="summary-row summary-row-actions">
+                  <span className="supporting-text">
+                    {collapsibleStepIds.length} long {collapsibleStepIds.length === 1 ? 'step' : 'steps'}
+                  </span>
+                  <button
+                    type="button"
+                    className="source-button source-button-secondary"
+                    onClick={() => setAllStepsExpanded(!allExpandableStepsExpanded)}
+                  >
+                    {allExpandableStepsExpanded ? '收起全部' : '展开全部'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            {terminal.steps.length > 0 ? (
+              <ol className="chain-list">
+                {terminal.steps.map((step) => {
                 const collapsible = shouldCollapseBody(step.body);
                 const expanded = isStepExpanded(step, expandedStepIds);
                 const body = collapsible && !expanded ? buildCollapsedBody(step.body) : step.body;
@@ -276,13 +275,14 @@ export function ChainPanel(props: ChainPanelProps) {
                     </div>
                   </li>
                 );
-              })}
-            </ol>
-          ) : (
-            <div className="empty-state">
-              <p>No chain steps were derived for this terminal window.</p>
-            </div>
-          )
+                })}
+              </ol>
+            ) : (
+              <div className="empty-state">
+                <p>No chain steps were derived for this terminal window.</p>
+              </div>
+            )}
+          </>
         ) : null}
       </div>
 
