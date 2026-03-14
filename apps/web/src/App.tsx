@@ -296,6 +296,8 @@ export default function App() {
         startTransition(() => {
           setActionHistoryFromSse(payload.actions);
         });
+        // Also refresh session detail so terminal messages and chain stay up to date
+        void loadSessionDetail(currentSessionId, { silent: true });
       }
     });
 

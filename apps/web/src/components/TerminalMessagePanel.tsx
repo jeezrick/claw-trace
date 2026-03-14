@@ -62,21 +62,19 @@ export function TerminalMessagePanel(props: TerminalMessagePanelProps) {
       }
     }
 
-    // Scroll selected terminal into view within the viewport container
+    // Scroll selected terminal into view within the viewport container only
     if (props.selectedTerminalKey) {
       const selectedEl = viewport.querySelector<HTMLElement>(
         `[data-terminal-key="${CSS.escape(props.selectedTerminalKey)}"]`
       );
       if (selectedEl) {
-        const elTop = selectedEl.offsetTop;
-        const elBottom = elTop + selectedEl.offsetHeight;
-        const viewTop = viewport.scrollTop;
-        const viewBottom = viewTop + viewport.clientHeight;
+        const containerRect = viewport.getBoundingClientRect();
+        const elRect = selectedEl.getBoundingClientRect();
 
-        if (elTop < viewTop) {
-          viewport.scrollTop = elTop;
-        } else if (elBottom > viewBottom) {
-          viewport.scrollTop = elBottom - viewport.clientHeight;
+        if (elRect.top < containerRect.top) {
+          viewport.scrollTop -= containerRect.top - elRect.top;
+        } else if (elRect.bottom > containerRect.bottom) {
+          viewport.scrollTop += elRect.bottom - containerRect.bottom;
         }
       }
     }

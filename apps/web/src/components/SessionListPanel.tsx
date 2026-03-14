@@ -101,14 +101,10 @@ export function SessionListPanel(props: SessionListPanelProps) {
     if (!viewport) return;
 
     if (snap && snap.workspaceId !== props.selectedWorkspaceId) {
+      // Workspace switched: jump to top
       viewport.scrollTop = 0;
-    } else if (
-      snap &&
-      snap.workspaceId === props.selectedWorkspaceId &&
-      (props.sessions.length !== snap.itemCount ||
-        props.sessions[0]?.id !== snap.firstSessionId ||
-        props.sessions[props.sessions.length - 1]?.id !== snap.lastSessionId)
-    ) {
+    } else if (snap && props.sessions.length !== snap.itemCount) {
+      // Sessions were added or removed: restore via anchor so position stays stable
       if (snap.stickToBottom) {
         viewport.scrollTop = viewport.scrollHeight;
       } else if (snap.anchorSessionId) {
@@ -124,6 +120,7 @@ export function SessionListPanel(props: SessionListPanelProps) {
         viewport.scrollTop = snap.scrollTop;
       }
     }
+    // If only session data changed (re-sort, status update) leave scrollTop untouched
 
     captureViewportSnapshot();
   }, [props.selectedWorkspaceId, props.sessions]);
