@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
+import EventEmitter from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import type { AppConfig } from '../config';
-import type { SessionStatus } from '../domain/events';
+import type { ActionHistoryItem, SessionStatus, SessionSummary } from '../domain/events';
 import type {
   ActionWriteInput,
   EventStore,
@@ -27,6 +28,27 @@ export type SessionIndexEntry = {
   chatType: string;
   deliveryTarget: string;
   raw: JsonRecord;
+};
+
+type SessionFingerprint = {
+  status: string;
+  updatedAt: number;
+  actionCount: number;
+};
+
+type SessionFileCache = {
+  mtime: number;
+  size: number;
+  indexUpdatedAt: number;
+  sessions: SessionWriteInput[];
+  actions: ActionWriteInput[];
+};
+
+export type IngestNotifications = EventEmitter & {
+  on(event: 'session_changed', listener: (payload: { change: 'added' | 'updated' | 'removed'; session?: SessionSummary; sessionId?: string }) => void): IngestNotifications;
+  on(event: 'action_changed', listener: (payload: { sessionId: string; actions: ActionHistoryItem[] }) => void): IngestNotifications;
+  emit(event: 'session_changed', payload: { change: 'added' | 'updated' | 'removed'; session?: SessionSummary; sessionId?: string }): boolean;
+  emit(event: 'action_changed', payload: { sessionId: string; actions: ActionHistoryItem[] }): boolean;
 };
 
 export type IngestState = {
@@ -756,25 +778,105 @@ function ingestRawStream(store: EventStore, config: AppConfig): void {
   );
 }
 
-function ingestSessions(store: EventStore, config: AppConfig): number {
+function toSessionSummary(session: SessionWriteInput): SessionSummary {
+  return {
+    id: session.id,
+    title: session.title,
+    status: session.status,
+    startedAt: session.startedAt,
+    updatedAt: session.updatedAt,
+    lastActionSummary: session.lastActionSummary,
+    metadata: session.metadata ?? null,
+  };
+}
+
+function toActionHistoryItem(action: ActionWriteInput): ActionHistoryItem {
+  return {
+    eventId: action.id,
+    sessionId: action.sessionId,
+    sequence: action.sequence,
+    kind: action.kind,
+    status: action.status,
+    title: action.title,
+    summary: action.summary,
+    startedAt: action.startedAt,
+    endedAt: action.endedAt,
+    cursor: action.cursor,
+    payload: action.payload,
+  };
+}
+
+function ingestSessions(
+  store: EventStore,
+  config: AppConfig,
+  fileCache: Map<string, SessionFileCache>
+): { sessions: SessionWriteInput[]; actions: ActionWriteInput[] } {
   const indexEntries = parseSessionsIndex(config);
   const sessions: SessionWriteInput[] = [];
   const actions: ActionWriteInput[] = [];
+  const seenPaths = new Set<string>();
 
   for (const entry of indexEntries) {
+    seenPaths.add(entry.sessionFilePath);
+
+    let fileMtime = 0;
+    let fileSize = 0;
+    try {
+      const stat = fs.statSync(entry.sessionFilePath);
+      fileMtime = stat.mtimeMs;
+      fileSize = stat.size;
+    } catch {
+      continue;
+    }
+
+    const cached = fileCache.get(entry.sessionFilePath);
+    if (
+      cached &&
+      cached.mtime === fileMtime &&
+      cached.size === fileSize &&
+      cached.indexUpdatedAt === entry.updatedAt
+    ) {
+      sessions.push(...cached.sessions);
+      actions.push(...cached.actions);
+      continue;
+    }
+
     const rows = parseJsonlRows(entry.sessionFilePath);
     const sessionActions = buildActions(entry.sessionId, rows);
-    sessions.push(buildSessionRecord(entry, rows, sessionActions, config));
+    const sessionRecord = buildSessionRecord(entry, rows, sessionActions, config);
+
+    sessions.push(sessionRecord);
     actions.push(...sessionActions);
+
+    fileCache.set(entry.sessionFilePath, {
+      mtime: fileMtime,
+      size: fileSize,
+      indexUpdatedAt: entry.updatedAt,
+      sessions: [sessionRecord],
+      actions: sessionActions,
+    });
+  }
+
+  // Evict stale cache entries for sessions that no longer exist
+  for (const key of fileCache.keys()) {
+    if (!seenPaths.has(key)) {
+      fileCache.delete(key);
+    }
   }
 
   store.replaceSessionsAndActions(sessions, actions);
-  return sessions.length;
+  return { sessions, actions };
 }
 
 export function createIngestService(config: AppConfig, store: EventStore) {
   let sessionTimer: NodeJS.Timeout | null = null;
   let rawTimer: NodeJS.Timeout | null = null;
+
+  const notifications = new EventEmitter() as IngestNotifications;
+  notifications.setMaxListeners(100);
+
+  const sessionFileCache = new Map<string, SessionFileCache>();
+  let prevSnapshot = new Map<string, SessionFingerprint>();
 
   const state: IngestState = {
     initialLoadCompleted: false,
@@ -786,11 +888,55 @@ export function createIngestService(config: AppConfig, store: EventStore) {
     rawStreamFile: config.rawStreamFile,
   };
 
+  function emitSessionDiff(
+    sessions: SessionWriteInput[],
+    actions: ActionWriteInput[]
+  ) {
+    const nextSnapshot = new Map<string, SessionFingerprint>();
+
+    for (const session of sessions) {
+      const sessionActions = actions.filter((a) => a.sessionId === session.id);
+      const actionCount = sessionActions.length;
+      nextSnapshot.set(session.id, { status: session.status, updatedAt: session.updatedAt, actionCount });
+
+      const prev = prevSnapshot.get(session.id);
+      const sessionSummary = toSessionSummary(session);
+
+      if (!prev) {
+        notifications.emit('session_changed', { change: 'added', session: sessionSummary });
+        if (actionCount > 0) {
+          const latestActions = sessionActions.slice(-100);
+          notifications.emit('action_changed', { sessionId: session.id, actions: latestActions.map(toActionHistoryItem) });
+        }
+      } else {
+        const sessionChanged = prev.status !== session.status || prev.updatedAt !== session.updatedAt;
+        const actionsChanged = prev.actionCount !== actionCount;
+
+        if (sessionChanged) {
+          notifications.emit('session_changed', { change: 'updated', session: sessionSummary });
+        }
+        if (actionsChanged) {
+          const latestActions = sessionActions.slice(-100);
+          notifications.emit('action_changed', { sessionId: session.id, actions: latestActions.map(toActionHistoryItem) });
+        }
+      }
+    }
+
+    for (const [id] of prevSnapshot) {
+      if (!nextSnapshot.has(id)) {
+        notifications.emit('session_changed', { change: 'removed', sessionId: id });
+      }
+    }
+
+    prevSnapshot = nextSnapshot;
+  }
+
   function runSessionSync() {
     try {
-      ingestSessions(store, config);
+      const { sessions, actions } = ingestSessions(store, config, sessionFileCache);
       state.lastSessionSyncAt = Date.now();
       state.sessionSyncError = null;
+      emitSessionDiff(sessions, actions);
     } catch (error) {
       state.sessionSyncError = error instanceof Error ? error.message : 'Unknown session ingest error';
     }
@@ -807,6 +953,8 @@ export function createIngestService(config: AppConfig, store: EventStore) {
   }
 
   return {
+    notifications,
+
     start() {
       runSessionSync();
       runRawSync();

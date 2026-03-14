@@ -13,8 +13,10 @@ import {
   listSessions,
   listWorkspaces,
   parseEventData,
+  type ActionHistoryUpdatedSsePayload,
   type AgentWorkspaceOption,
   type RawDebugEvent,
+  type SessionUpdatedSsePayload,
   type StreamReadyEvent,
 } from './lib/api';
 import { useAppStore } from './store/app-store';
@@ -67,6 +69,9 @@ export default function App() {
   const streamInfo = useAppStore((state) => state.streamInfo);
   const workspaceTab = useAppStore((state) => state.workspaceTab);
   const selectSession = useAppStore((state) => state.selectSession);
+  const patchSession = useAppStore((state) => state.patchSession);
+  const removeSessionFromList = useAppStore((state) => state.removeSessionFromList);
+  const setActionHistoryFromSse = useAppStore((state) => state.setActionHistoryFromSse);
   const syncSelectedSession = useAppStore((state) => state.syncSelectedSession);
   const setSessionDetailLoading = useAppStore((state) => state.setSessionDetailLoading);
   const setSessionDetail = useAppStore((state) => state.setSessionDetail);
@@ -210,14 +215,6 @@ export default function App() {
     selectSession(null);
     resetDebugStream();
     void refreshSessions();
-
-    const intervalId = window.setInterval(() => {
-      void refreshSessions({ silent: true });
-    }, 15_000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
   }, [selectedWorkspaceId]);
 
   useEffect(() => {
@@ -229,15 +226,6 @@ export default function App() {
 
     void loadSessionDetail(selectedSessionId);
     void loadActionHistory(selectedSessionId);
-
-    const intervalId = window.setInterval(() => {
-      void loadSessionDetail(selectedSessionId, { silent: true });
-      void loadActionHistory(selectedSessionId, { silent: true });
-    }, 5_000);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
   }, [selectedSessionId, selectedWorkspaceId]);
 
   useEffect(() => {
@@ -248,6 +236,7 @@ export default function App() {
 
     const eventSource = createDebugEventSource({
       sessionId: effectiveStreamSessionId,
+      watchSessionId: selectedSessionId ?? undefined,
       workspace: selectedWorkspaceId,
     });
 
@@ -263,9 +252,51 @@ export default function App() {
         return;
       }
 
+      const readyEvent = parseEventData<StreamReadyEvent>(event as MessageEvent<string>);
       startTransition(() => {
-        setStreamReady(parseEventData<StreamReadyEvent>(event as MessageEvent<string>));
+        setStreamReady(readyEvent);
       });
+
+      // On reconnect (resumeCursor > 0), re-sync to catch up on missed state
+      // Re-sync on ready, but skip if data was just loaded (< 2s ago) to avoid double-fetch on init
+      const { sessionsLastLoadedAt } = useAppStore.getState();
+      const isStale = !sessionsLastLoadedAt || Date.now() - sessionsLastLoadedAt > 2_000;
+      if (isStale) {
+        void refreshSessions({ silent: true });
+        const currentSessionId = useAppStore.getState().selectedSessionId;
+        if (currentSessionId) {
+          void loadActionHistory(currentSessionId, { silent: true });
+        }
+      }
+    });
+
+    eventSource.addEventListener('session_updated', (event) => {
+      if (disposed) {
+        return;
+      }
+
+      const payload = parseEventData<SessionUpdatedSsePayload>(event as MessageEvent<string>);
+      startTransition(() => {
+        if (payload.change === 'removed') {
+          removeSessionFromList(payload.sessionId ?? '');
+        } else if (payload.session) {
+          patchSession(payload.session);
+        }
+      });
+    });
+
+    eventSource.addEventListener('action_history_updated', (event) => {
+      if (disposed) {
+        return;
+      }
+
+      const payload = parseEventData<ActionHistoryUpdatedSsePayload>(event as MessageEvent<string>);
+      const currentSessionId = useAppStore.getState().selectedSessionId;
+      if (payload.sessionId === currentSessionId) {
+        startTransition(() => {
+          setActionHistoryFromSse(payload.actions);
+        });
+      }
     });
 
     eventSource.addEventListener('raw', (event) => {
@@ -305,8 +336,12 @@ export default function App() {
   }, [
     appendDebugEvent,
     effectiveStreamSessionId,
+    patchSession,
+    removeSessionFromList,
     resetDebugStream,
+    selectedSessionId,
     selectedWorkspaceId,
+    setActionHistoryFromSse,
     setStreamError,
     setStreamReady,
     setStreamStatus,

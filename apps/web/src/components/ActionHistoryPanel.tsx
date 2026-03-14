@@ -229,7 +229,12 @@ export function ActionHistoryPanel(props: ActionHistoryPanelProps) {
       <div className="panel-header">
         <div>
           <p className="eyebrow">Session detail</p>
-          <h2>Action history</h2>
+          <h2>
+            Action history
+            {props.refreshing || props.state === 'loading' ? (
+              <span className="loading-spinner" aria-label="Loading" />
+            ) : null}
+          </h2>
         </div>
         <span className={`status-pill status-${props.session?.status ?? 'unknown'}`}>
           {props.session?.status ?? 'unknown'}

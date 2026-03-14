@@ -120,9 +120,21 @@ export const ActionHistoryParamsSchema = z.object({
 export const StreamQuerySchema = z.object({
   cursor: z.coerce.number().int().nonnegative().optional(),
   sessionId: z.string().min(1).optional(),
+  watchSessionId: z.string().min(1).optional(),
   workspace: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
+
+export type SessionUpdatedSsePayload = {
+  change: 'added' | 'updated' | 'removed';
+  session?: SessionSummary;
+  sessionId?: string;
+};
+
+export type ActionHistoryUpdatedSsePayload = {
+  sessionId: string;
+  actions: ActionHistoryItem[];
+};
 
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 export type ActionHistoryItem = z.infer<typeof ActionHistoryItemSchema>;

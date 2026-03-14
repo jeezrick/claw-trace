@@ -1,321 +1,115 @@
-# Trace Service
+# claw-trace
 
-把 OpenClaw session 链路网页做成可访问服务。
+OpenClaw Agent 执行链路可视化服务。实时展示每个 session 的完整执行过程，让你清楚地看到 Agent 当前在做什么、卡在哪一步。
 
-## 现状
+## 能做什么
 
-**v1 已被完全取代。**
+- **Session 列表** — 列出所有 Agent session，自动推断状态（running / stalled / failed / completed / idle）
+- **Action 历史** — 展示 session 内的完整执行步骤：user 指令、think、toolCall、toolResult、reply、error
+- **实时链路流** — 通过 SSE 实时推送 OpenClaw 网关产出的 raw stream 事件，无需手动刷新
+- **Workspace 切换** — 支持切换不同 Agent workspace
 
-现在 `claw-trace start / update / rollback` 走的都是 **v2 单服务版本**：
-
-- `apps/server/`：Fastify + SQLite backend
-- `apps/web/dist`：React 前端构建产物，由 v2 backend 直接静态托管
-- 默认访问地址：`http://<机器IP>:8787`
-- 默认健康检查：`http://127.0.0.1:8787/api/v2/health`
-
-也就是说，现在不再需要单独跑 `server.js + public/` 的 v1 方案了。
-
-## 目录
-
-- `apps/server/` v2 Fastify + SQLite backend
-- `apps/web/` v2 React + Vite + Zustand frontend
-- `docs/adr/0001-v2-architecture.md` v2 架构 ADR / 迁移计划
-
-### 当前能力
-
-- `GET /api/v2/health`
-- `GET /api/v2/sessions`
-- `GET /api/v2/sessions/:sessionId/actions`
-- `GET /api/v2/stream`
-- sessions/action history 使用 best-effort 规范化
-  - 优先提取 `user / think / toolCall / toolResult / reply / assistantError`
-- session status 使用 best-effort 推断
-  - `running / stalled / failed / completed / idle`
-- raw stream 先落 SQLite，再通过 cursor-based SSE replay 给前端
-
-### 当前边界
-
-- phase 1 只做稳定可读 slice，不追求完整建模
-- raw stream 中很多事件当前仍然只有 `runId`，并不总能回填 `sessionId`
-  - 因此 debug stream 的“当前选中 session”scope 仍是 best-effort；缺少 `sessionId` 的事件只会出现在“全部 session”视图
-- session ingest 目前是定时重建 read model；后续 phase 2 再做更细粒度增量
-
-如果你要看推荐架构和迁移步骤，先读：
-
-- `docs/adr/0001-v2-architecture.md`
-
-## 新增能力（v1.0.19）
-
-- 在页面顶部新增 **Raw Stream 实时链路面板**（Live）
-- 支持 SSE 实时推送、关键词过滤、暂停/继续、清空
-- 与原有 Session/Terminal/Agentic timeline 同页融合
-- 实时面板默认仅展示“有价值事件”，过滤高频噪音：
-  - 隐藏 `assistant_text_stream`
-  - `assistant_thinking_stream` 仅保留 `thinking_end`
-- 新增按 `runId + sessionId` 聚合显示，避免所有 session 混在一起
-- 新增范围切换：`当前选中 session` / `全部 session`
-- 新增事件类型快速开关（assistant_end / thinking_end / toolCall / toolResult / error）
-- 修复滚动行为：用户滚动查看历史时不再被强制跳到底部
-- 选中 session 后默认展示 **Action 历史视图**（不依赖实时流）
-  - 显示 user / think / toolCall / toolResult / reply / error
-  - 自动给出状态：已完成 / 执行中 / 执行失败 / 等待下一步
-  - 适用于“发了指令但迟迟不回复，想知道卡在哪一步”的排障
-- 全量模式仍保留 raw stream 聚合流
-  - SSE 初次连接回放提升到 `replay=2000`
-  - 服务端在内存缓存为空时可从 raw 文件补读历史并回放
-- 稳定性增强（减少手动刷新）
-  - SSE 断线自动重连（指数退避）
-  - UI 状态持久化（session / scope / filter / kinds / paused）
-  - 周期性自动刷新 sessions（15s）并保持当前选中 session
-- 修复自动刷新“抢焦点”问题
-  - 自动刷新时不再强制跳到最新终端消息
-  - 若用户已选中某条终端消息，刷新后尽量保持同一条
-
-## 一键安装（推荐）
+## 快速安装
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | bash
 ```
 
-安装后：
+安装完成后启动服务：
 
 ```bash
 claw-trace start
-claw-trace status
 ```
 
-如果机器上已经跑着旧版，直接重新执行安装命令即可；安装脚本会先停掉旧进程，再用新版本拉起服务，不需要再手动 restart。安装时会在本机执行一次 `npm ci` 来编译运行时依赖（主要是 `better-sqlite3`），避免不同 Node 版本之间的二进制不兼容。
+打开浏览器访问 `http://<机器IP>:8787`。
 
-访问：`http://<对方机器IP>:8787`
+> 已有旧版？直接重新执行安装命令即可，脚本会自动停掉旧进程并用新版本拉起。
 
-## 运行方式（正式）
-
-### 本机开发
+## 命令行
 
 ```bash
-cd /root/code/claw-trace
-npm install
-npm run v2:dev:lan
+claw-trace start       # 启动服务
+claw-trace stop        # 停止服务
+claw-trace restart     # 重启服务
+claw-trace status      # 查看运行状态
+claw-trace logs        # 查看日志
+claw-trace doctor      # 一键健康检查
+claw-trace update      # 更新到最新版
+claw-trace update v1.0.2  # 更新到指定版本
+claw-trace rollback    # 回滚到上一个版本
+claw-trace version     # 查看当前版本
 ```
 
-开发预览地址：
+`doctor` 会检查：服务进程、session 目录可读性、raw stream 文件是否存在且持续增长、API 是否可达。
+
+## 本地开发
+
+```bash
+npm install
+npm run v2:dev        # 启动前后端双进程（127.0.0.1）
+npm run v2:dev:lan    # 同上，监听 0.0.0.0（局域网可访问）
+```
+
+开发时访问地址：
 
 - 前端：`http://<机器IP>:5174`
-- 后端健康检查：`http://<机器IP>:8790/api/v2/health`
+- 后端：`http://<机器IP>:8790/api/v2/health`
 
-### 正式运行 / 安装后运行
-
-```bash
-claw-trace start
-```
-
-默认会启动 **v2 单服务**，由后端直接托管前端静态资源：
-
-- 页面：`http://<机器IP>:8787`
-- 健康检查：`http://127.0.0.1:8787/api/v2/health`
-
-### 更新
-
-```bash
-claw-trace update
-```
-
-更新后如果服务原本在运行，会自动重启到最新 v2 版本。
-
-## 命令行用法（支持 update）
-
-```bash
-claw-trace start
-claw-trace stop
-claw-trace restart
-claw-trace status
-claw-trace logs
-claw-trace doctor           # 一键健康检查（进程/文件/API/raw-stream）
-claw-trace version
-claw-trace update           # 更新到 latest
-claw-trace update v1.0.2    # 更新到指定版本
-claw-trace rollback
-```
-
-## 发布到 GitHub（方案 A）
-
-1. 在 GitHub 新建仓库（建议：`trace-service`）
-2. 推送代码到 `main`
-3. 打 tag 并推送：
-
-```bash
-git tag v1.0.0
-git push origin main --tags
-```
-
-4. 本项目内置了 GitHub Actions（`.github/workflows/release.yml`），会自动：
-   - 运行 `./build-bundle.sh`
-   - 生成 `trace-service.tgz`
-   - 创建 Release 并上传该资产
-
-之后你只需把安装命令里的版本号改成新 tag 即可（如 `v1.0.1`）。
-
-## 本机开发运行
-
-先安装 workspace 依赖：
-
-```bash
-cd /root/code/claw-trace
-npm install
-```
-
-### 最省事：直接跑 v2 双进程开发模式
-
-```bash
-npm run v2:dev
-```
-
-这会同时启动：
-
-- v2 backend: `http://127.0.0.1:8790`
-- v2 frontend: `http://127.0.0.1:5174`
-
-如果你需要让局域网其他设备也能直接访问，用这个：
-
-```bash
-npm run v2:dev:lan
-```
-
-这会把监听地址改成 `0.0.0.0`，然后你可以从同网段设备访问：
-
-- `http://<这台机器IP>:5174`
-- `http://<这台机器IP>:8790/api/v2/health`
-
-### 正式构建
+构建：
 
 ```bash
 npm run v2:build
 ```
 
-如果想分别构建，也可以：
-
-```bash
-npm run v2:server:build
-npm run v2:web:build
-```
-
-### 正式单服务运行（本地仓库内）
-
-```bash
-npm start
-```
-
-或者：
-
-```bash
-npm run v2:start
-```
-
-这时启动的是 **v2 单服务**，页面由 backend 直接托管，访问：
-
-- `http://127.0.0.1:8787`
-- `http://127.0.0.1:8787/api/v2/health`
-
 ## 环境变量
 
-- `PORT`：端口（默认 `8787`）
-- `HOST`：监听地址（默认 `0.0.0.0`）
-- `DATABASE_FILE`：SQLite 文件路径（默认 `apps/server/data/claw-trace-v2.sqlite`）
-- `SESSIONS_DIR`：session 数据目录（默认 `/root/.openclaw/agents/main/sessions`）
-- `RAW_STREAM_FILE`：raw stream 日志路径（默认 `~/.openclaw/logs/raw-stream.jsonl`）
-- `RAW_POLL_MS`：轮询间隔毫秒（默认 `700`）
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `HOST` | `127.0.0.1` | 监听地址 |
+| `PORT` | `8787` | 监听端口 |
+| `DATABASE_FILE` | `apps/server/data/claw-trace-v2.sqlite` | SQLite 文件路径 |
+| `SESSIONS_DIR` | `/root/.openclaw/agents/main/sessions` | session 数据目录 |
+| `SESSIONS_INDEX_FILE` | `<SESSIONS_DIR>/sessions.json` | session 索引文件 |
+| `RAW_STREAM_FILE` | `~/.openclaw/logs/raw-stream.jsonl` | raw stream 日志路径 |
+| `INGEST_POLL_MS` | `3000` | session/raw 数据摄取轮询间隔（ms） |
+| `STREAM_POLL_MS` | `1000` | SSE 对数据库的轮询间隔（ms） |
+| `SESSION_STALL_MS` | `300000` | 判定 session 为 stalled 的超时阈值（ms） |
+| `SSE_HEARTBEAT_MS` | `15000` | SSE heartbeat 间隔（ms） |
 
-示例：
-
-```bash
-HOST=0.0.0.0 \
-PORT=8787 \
-SESSIONS_DIR=/root/.openclaw/agents/main/sessions \
-RAW_STREAM_FILE=/root/.openclaw/logs/raw-stream.jsonl \
-node server.js
-```
-
-> 提示：要让 raw stream 文件持续有内容，OpenClaw 网关需启用 raw stream（如 `OPENCLAW_RAW_STREAM=1`）。
-
-### v2 环境变量
-
-- `HOST`：v2 backend 监听地址，默认 `127.0.0.1`
-- `PORT`：v2 backend 端口，默认 `8790`
-- `DATABASE_FILE`：SQLite 文件，默认 `apps/server/data/claw-trace-v2.sqlite`
-- `SESSIONS_DIR`：session 目录，默认 `/root/.openclaw/agents/main/sessions`
-- `SESSIONS_INDEX_FILE`：session 索引文件，默认 `<SESSIONS_DIR>/sessions.json`
-- `RAW_STREAM_FILE`：raw stream 文件，默认 `~/.openclaw/logs/raw-stream.jsonl`
-- `INGEST_POLL_MS`：session/raw ingest 轮询间隔，默认 `3000`
-- `STREAM_POLL_MS`：SSE 对 DB 的轮询间隔，默认 `1000`
-- `SESSION_STALL_MS`：session 判定 stalled 的阈值，默认 `300000`
-- `SSE_HEARTBEAT_MS`：SSE heartbeat 间隔，默认 `15000`
+> 要让 raw stream 持续有数据，需在 OpenClaw 网关开启 `OPENCLAW_RAW_STREAM=1`。
 
 ## API
 
-- `GET /api/config` -> 读取服务配置（含 raw stream 文件路径）
-- `GET /api/sessions` -> 读取 `sessions.json`
-- `GET /api/session-file?file=<session.jsonl>` -> 读取指定 `jsonl`
-- `GET /api/raw-stream?replay=2000` -> SSE 实时流（先回放历史文件/缓存，再持续推送）
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v2/health` | 健康检查 |
+| GET | `/api/v2/sessions` | 获取所有 session 列表 |
+| GET | `/api/v2/sessions/:sessionId/actions` | 获取指定 session 的 action 历史 |
+| GET | `/api/v2/stream` | SSE 实时事件流 |
 
-> 安全限制：仅允许读取 `sessions.json` 和形如 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.jsonl` 的文件名。
+## 架构
 
-## 设计原理（实时链路）
+```
+OpenClaw 网关
+  └── raw-stream.jsonl（落盘）
+        └── claw-trace server
+              ├── ingest（轮询读取 → SQLite）
+              ├── REST API
+              ├── SSE 推送
+              └── 静态托管前端
+                    └── 浏览器  http://<机器IP>:8787
+```
 
-### 1) 为什么单看 session jsonl 不够
+后端：Fastify + SQLite（`better-sqlite3`）+ TypeScript
+前端：React + Vite + Zustand
 
-`sessions/*.jsonl` 是会话历史持久化，写入通常以“消息级/阶段性”落盘为主。
-在一次执行尚未结束时，常会先看到 user message，看不到完整未完成链路。
+## 发版
 
-### 2) 方案：Raw Stream + SSE
+打 tag 后 GitHub Actions 自动构建并发布 Release：
 
-- 网关侧开启 raw stream 落盘（`OPENCLAW_RAW_STREAM=1`）
-- claw-trace 后端轮询 `RAW_STREAM_FILE` 增量读取（类似 tail）
-- 后端通过 SSE (`/api/raw-stream`) 推送给前端
-- 前端实时渲染并提供过滤/暂停/清空
+```bash
+git tag v1.1.1
+git push origin main --tags
+```
 
-这样可以在执行未完成前，就看到中间 chunk/event。
-
-### 3) 后端实现要点
-
-- `RAW_STREAM_FILE` 默认：`~/.openclaw/logs/raw-stream.jsonl`
-- `RAW_POLL_MS` 默认：`700ms`
-- 首次连接时：
-  - 返回 `meta`（当前 raw 文件路径）
-  - 可回放最近 N 条（`replay` 参数）
-- 增量读取策略：
-  - 维护读取偏移 `position`
-  - 处理日志轮转/截断（inode 或 size 回退）
-  - 行缓冲（避免半行 JSON）
-
-### 4) 前端实现要点
-
-- 新增 Live 面板（与原有 3-step 视图同页）
-- EventSource 连接 `/api/raw-stream`
-- `meta` 事件用于显示当前 raw 文件来源
-- `message` 事件先做“价值过滤”再显示：
-  - 默认隐藏 `assistant_text_stream`
-  - `assistant_thinking_stream` 仅显示 `thinking_end`
-- 展示聚合：按 `runId + sessionId` 分组（group card）
-- 范围筛选：
-  - `当前选中 session`（默认）
-  - `全部 session`
-- 选中 session/终端消息后，增加“时间窗兜底过滤”：
-  - 当 raw 事件缺失 `sessionId` 时，按当前终端消息区间匹配
-  - 避免看不到原本存在于 raw-stream 文件中的历史链路
-- 展示层支持：
-  - 关键词过滤（kind/runId/sessionId）
-  - 事件类型快速开关（assistant_end / thinking_end / toolCall / toolResult / error）
-  - 暂停/继续渲染
-  - 清空窗口
-- 滚动策略：仅当视图接近底部时自动跟随；用户向上翻历史时保持当前位置
-
-### 5) 运维排障（doctor）
-
-新增 `claw-trace doctor`，自动检查：
-
-- 服务进程是否在运行
-- `SESSIONS_DIR` / `sessions.json` 可读性
-- `RAW_STREAM_FILE` 是否存在、可读、是否增长
-- `http://127.0.0.1:$PORT/api/config` 是否可访问
-
-用于快速判断“为什么实时面板没数据”。
+CI 会执行 `./build-bundle.sh`，生成 `trace-service.tgz` 并上传到 Release Assets。

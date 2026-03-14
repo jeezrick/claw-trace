@@ -31,9 +31,9 @@ export async function buildServer(config: AppConfig = loadConfig()) {
   registerHealthRoutes(app, { config, store, ingest });
   registerWorkspaceRoutes(app, { config });
   registerSessionRoutes(app, { config, store, ingest });
-  registerSessionDetailRoutes(app, { config, store });
-  registerActionHistoryRoutes(app, { config, store });
-  registerStreamRoutes(app, { config, store });
+  registerSessionDetailRoutes(app, { config });
+  registerActionHistoryRoutes(app, { config });
+  registerStreamRoutes(app, { config, store, ingest });
   registerWebRoutes(app);
 
   app.addHook('onClose', async () => {

@@ -2,12 +2,10 @@ import type { FastifyInstance } from 'fastify';
 
 import type { AppConfig } from '../config';
 import { ActionHistoryParamsSchema, ActionHistoryQuerySchema } from '../domain/events';
-import type { EventStore } from '../store/event-store';
 import { getDefaultWorkspaceId, getSessionBundleForWorkspace } from '../workspaces';
 
 type ActionHistoryDependencies = {
   config: AppConfig;
-  store: EventStore;
 };
 
 export function registerActionHistoryRoutes(

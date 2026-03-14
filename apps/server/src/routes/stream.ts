@@ -1,13 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { AppConfig } from '../config';
-import { StreamQuerySchema, type RawDebugEvent } from '../domain/events';
+import { StreamQuerySchema, type ActionHistoryItem, type RawDebugEvent, type SessionSummary } from '../domain/events';
+import type { IngestNotifications } from '../ingest/service';
 import type { EventStore } from '../store/event-store';
 import { getDefaultWorkspaceId, listWorkspaceSessionIds, resolveWorkspaceConfig } from '../workspaces';
 
 type StreamDependencies = {
   config: AppConfig;
   store: EventStore;
+  ingest: { notifications: IngestNotifications };
 };
 
 function writeSseEvent(
@@ -127,6 +129,29 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
       workspace: workspaceId,
     });
 
+    const watchSessionId = parsed.data.watchSessionId ?? null;
+
+    const onSessionChanged = (payload: { change: 'added' | 'updated' | 'removed'; session?: SessionSummary; sessionId?: string }) => {
+      const id = payload.session?.id ?? payload.sessionId;
+      if (workspaceSessionIds && id && !workspaceSessionIds.has(id)) {
+        return;
+      }
+      writeSseEvent(reply.raw, 'session_updated', payload);
+    };
+
+    const onActionChanged = (payload: { sessionId: string; actions: ActionHistoryItem[] }) => {
+      if (!watchSessionId || payload.sessionId !== watchSessionId) {
+        return;
+      }
+      if (workspaceSessionIds && !workspaceSessionIds.has(payload.sessionId)) {
+        return;
+      }
+      writeSseEvent(reply.raw, 'action_history_updated', payload);
+    };
+
+    deps.ingest.notifications.on('session_changed', onSessionChanged);
+    deps.ingest.notifications.on('action_changed', onActionChanged);
+
     const heartbeat = setInterval(() => {
       writeSseEvent(reply.raw, 'heartbeat', {
         ts: Date.now(),
@@ -152,6 +177,8 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
     pollTimer.unref();
 
     request.raw.on('close', () => {
+      deps.ingest.notifications.off('session_changed', onSessionChanged);
+      deps.ingest.notifications.off('action_changed', onActionChanged);
       clearInterval(heartbeat);
       if (pollTimer) {
         clearInterval(pollTimer);

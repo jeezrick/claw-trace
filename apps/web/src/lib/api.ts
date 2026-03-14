@@ -117,6 +117,17 @@ export type StreamReadyEvent = {
   workspace?: string;
 };
 
+export type SessionUpdatedSsePayload = {
+  change: 'added' | 'updated' | 'removed';
+  session?: SessionSummary;
+  sessionId?: string;
+};
+
+export type ActionHistoryUpdatedSsePayload = {
+  sessionId: string;
+  actions: ActionHistoryItem[];
+};
+
 export type AgentWorkspaceOption = {
   id: string;
   label: string;
@@ -218,11 +229,13 @@ export function getSessionDetail(sessionId: string, workspace?: string) {
 
 export function createDebugEventSource(options: {
   sessionId?: string;
+  watchSessionId?: string;
   cursor?: number;
   workspace?: string;
 } = {}) {
   const query = buildQuery({
     sessionId: options.sessionId,
+    watchSessionId: options.watchSessionId,
     cursor: options.cursor,
     workspace: options.workspace,
   });

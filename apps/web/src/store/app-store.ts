@@ -60,6 +60,9 @@ type AppState = {
   setActionHistory: (items: ActionHistoryItem[]) => void;
   setActionHistoryError: (message: string) => void;
   resetActionHistory: () => void;
+  patchSession: (session: SessionSummary) => void;
+  removeSessionFromList: (sessionId: string) => void;
+  setActionHistoryFromSse: (items: ActionHistoryItem[]) => void;
   setDebugStreamScope: (scope: DebugStreamScope) => void;
   setStreamStatus: (status: StreamStatus) => void;
   setStreamReady: (event: StreamReadyEvent) => void;
@@ -284,6 +287,29 @@ export const useAppStore = create<AppState>((set) => ({
       actionHistoryRefreshing: false,
       actionHistoryLastLoadedAt: null,
       actionHistoryError: null,
+    }),
+
+  patchSession: (session) =>
+    set((state) => {
+      const exists = state.sessions.some((s) => s.id === session.id);
+      const patched = exists
+        ? state.sessions.map((s) => (s.id === session.id ? session : s))
+        : [...state.sessions, session];
+      const sessions = patched.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+      const selectedSessionSnapshot =
+        state.selectedSessionId === session.id ? session : state.selectedSessionSnapshot;
+      return { sessions, selectedSessionSnapshot };
+    }),
+
+  removeSessionFromList: (sessionId) =>
+    set((state) => ({
+      sessions: state.sessions.filter((s) => s.id !== sessionId),
+    })),
+
+  setActionHistoryFromSse: (items) =>
+    set({
+      actionHistory: items,
+      actionHistoryLastLoadedAt: Date.now(),
     }),
 
   setDebugStreamScope: (scope) =>

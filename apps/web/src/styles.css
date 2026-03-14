@@ -688,6 +688,122 @@ pre {
   }
 }
 
+/* === Loading spinner === */
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(15, 118, 110, 0.22);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.65s linear infinite;
+  vertical-align: middle;
+  flex-shrink: 0;
+  margin-left: 0.45rem;
+}
+
+/* === Selected card left accent === */
+
+.session-card[aria-pressed="true"],
+.terminal-card[aria-pressed="true"] {
+  box-shadow: inset 3px 0 0 var(--accent), var(--shadow-soft);
+}
+
+/* === Payload block improvements === */
+
+.payload-block {
+  font-size: 0.88rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.payload-key {
+  color: #93c5fd;
+}
+
+.payload-str {
+  color: #86efac;
+}
+
+.payload-num {
+  color: #fda4af;
+}
+
+/* === Collapsible payload === */
+
+.payload-collapsible {
+  position: relative;
+}
+
+.payload-collapsible.is-collapsed .payload-block {
+  max-height: 5.5rem;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+}
+
+.payload-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+  padding: 0.18rem 0.55rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: rgba(180, 210, 255, 0.75);
+  font-size: 0.76rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.payload-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* === Session card meta row === */
+
+.session-card-meta {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.session-meta-count,
+.session-meta-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.48rem;
+  border-radius: 999px;
+  background: rgba(32, 44, 68, 0.07);
+  font-size: 0.76rem;
+}
+
+/* === Keyboard focus visible === */
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 @media (max-width: 1280px) {
   .workflow-grid {
     grid-template-columns: minmax(20rem, 24rem) minmax(0, 1fr);
@@ -725,8 +841,15 @@ pre {
   }
 
   .workspace-tabs {
+    display: flex;
     width: 100%;
     max-width: 100%;
     flex-wrap: wrap;
+  }
+
+  .workspace-tab {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 
 import type { SessionSummary, TerminalMessageItem } from '../lib/api';
 import type { LoadState } from '../store/app-store';
@@ -34,23 +34,65 @@ function summarizeTools(terminal: TerminalMessageItem) {
 }
 
 export function TerminalMessagePanel(props: TerminalMessagePanelProps) {
-  const selectedItemRef = useRef<HTMLButtonElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const prevSessionIdRef = useRef<string | null>(null);
+  const prevItemCountRef = useRef<number>(0);
+
   const isLoading = props.state === 'loading' && props.items.length === 0;
   const showEmptyState = props.session && props.items.length === 0 && !isLoading && !props.error;
 
-  useEffect(() => {
-    selectedItemRef.current?.scrollIntoView({
-      block: 'nearest',
-      inline: 'nearest',
-    });
-  }, [props.selectedSessionId, props.selectedTerminalKey]);
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+
+    const sessionChanged = props.selectedSessionId !== prevSessionIdRef.current;
+
+    if (sessionChanged) {
+      viewport.scrollTop = 0;
+      prevSessionIdRef.current = props.selectedSessionId;
+      prevItemCountRef.current = props.items.length;
+      return;
+    }
+
+    // Stick to bottom when new items arrive and we were already at the bottom
+    if (props.items.length > prevItemCountRef.current && prevItemCountRef.current > 0) {
+      const distFromBottom = viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+      if (distFromBottom <= 48) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    }
+
+    // Scroll selected terminal into view within the viewport container
+    if (props.selectedTerminalKey) {
+      const selectedEl = viewport.querySelector<HTMLElement>(
+        `[data-terminal-key="${CSS.escape(props.selectedTerminalKey)}"]`
+      );
+      if (selectedEl) {
+        const elTop = selectedEl.offsetTop;
+        const elBottom = elTop + selectedEl.offsetHeight;
+        const viewTop = viewport.scrollTop;
+        const viewBottom = viewTop + viewport.clientHeight;
+
+        if (elTop < viewTop) {
+          viewport.scrollTop = elTop;
+        } else if (elBottom > viewBottom) {
+          viewport.scrollTop = elBottom - viewport.clientHeight;
+        }
+      }
+    }
+
+    prevItemCountRef.current = props.items.length;
+  }, [props.selectedSessionId, props.items, props.selectedTerminalKey]);
 
   return (
     <div className="panel-content">
       <div className="panel-header">
         <div>
           <p className="eyebrow">Step 2</p>
-          <h2>Terminal messages</h2>
+          <h2>
+            Terminal messages
+            {props.refreshing ? <span className="loading-spinner" aria-label="Loading" /> : null}
+          </h2>
         </div>
         <span className="status-pill status-open">{props.items.length} windows</span>
       </div>
@@ -87,7 +129,7 @@ export function TerminalMessagePanel(props: TerminalMessagePanelProps) {
 
       {props.error ? <p className="error-text">{props.error}</p> : null}
 
-      <div className="panel-viewport">
+      <div ref={viewportRef} className="panel-viewport">
         {isLoading ? (
           <div className="empty-state">
             <p>Loading terminal messages…</p>
@@ -115,10 +157,10 @@ export function TerminalMessagePanel(props: TerminalMessagePanelProps) {
               return (
                 <button
                   key={terminal.key}
-                  ref={isSelected ? selectedItemRef : null}
                   type="button"
                   className="terminal-card"
                   aria-pressed={isSelected}
+                  data-terminal-key={terminal.key}
                   onClick={() => props.onSelect(terminal)}
                 >
                   <div className="terminal-card-head">
