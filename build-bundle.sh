@@ -4,6 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$ROOT_DIR/public/trace-service.tgz"
 
+PACKAGE_VERSION="$(node -p "require('$ROOT_DIR/package.json').version")"
+VERSION_FILE="$(tr -d '\r\n' < "$ROOT_DIR/VERSION")"
+EXPECTED_TAG="v$PACKAGE_VERSION"
+
+if [[ "$VERSION_FILE" != "$EXPECTED_TAG" ]]; then
+  echo "[build-bundle] version mismatch: VERSION=$VERSION_FILE, expected $EXPECTED_TAG from package.json" >&2
+  exit 1
+fi
+
 mkdir -p "$ROOT_DIR/public"
 rm -f "$OUT"
 
