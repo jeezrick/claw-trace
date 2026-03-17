@@ -134,6 +134,13 @@ claw-trace start
 claw-trace status
 ```
 
+如果机器支持 systemd，安装时还会自动注册并启用 `claw-trace.service`，让服务支持：
+- 异常退出自动重启
+- 机器重启自动拉起
+- 使用 `claw-trace logs` 直接查看 journalctl 日志
+
+如果当前环境没有可用的 systemd，则自动回退到 nohup 模式。
+
 ### 2）启动并访问
 
 ```bash
@@ -153,6 +160,8 @@ claw-trace status
 claw-trace logs
 claw-trace version
 claw-trace doctor             # 健康诊断
+claw-trace setup-service      # 手动重装/启用 systemd 托管
+claw-trace service-mode       # 查看当前托管模式（systemd/nohup）
 claw-trace update             # 更新到 latest
 claw-trace update v1.1.6      # 更新到指定版本
 claw-trace rollback

@@ -22,7 +22,12 @@ RAW_STREAM_FILE="${RAW_STREAM_FILE:-$HOME/.openclaw/logs/raw-stream.jsonl}"
 RAW_POLL_MS="${RAW_POLL_MS:-700}"
 DATABASE_FILE="${DATABASE_FILE:-$APP_DIR/apps/server/data/claw-trace-v2.sqlite}"
 SERVER_JS="$APP_DIR/apps/server/dist/index.js"
-INSTALL_NEEDS_NPM=0
+SYSTEMCTL_BIN="${CLAW_TRACE_SYSTEMCTL_BIN:-systemctl}"
+JOURNALCTL_BIN="${CLAW_TRACE_JOURNALCTL_BIN:-journalctl}"
+SERVICE_NAME="${CLAW_TRACE_SERVICE_NAME:-claw-trace.service}"
+SYSTEM_UNIT_PATH="${CLAW_TRACE_SYSTEMD_SYSTEM_UNIT_PATH:-/etc/systemd/system/$SERVICE_NAME}"
+USER_UNIT_DIR="${CLAW_TRACE_SYSTEMD_USER_UNIT_DIR:-$HOME/.config/systemd/user}"
+USER_UNIT_PATH="$USER_UNIT_DIR/$SERVICE_NAME"
 
 mkdir -p "$STATE_DIR"
 
@@ -31,6 +36,83 @@ version() {
     cat "$APP_DIR/VERSION"
   else
     echo "unknown"
+  fi
+}
+
+has_systemctl() {
+  command -v "$SYSTEMCTL_BIN" >/dev/null 2>&1
+}
+
+has_journalctl() {
+  command -v "$JOURNALCTL_BIN" >/dev/null 2>&1
+}
+
+system_unit_installed() {
+  [[ -f "$SYSTEM_UNIT_PATH" ]]
+}
+
+user_unit_installed() {
+  [[ -f "$USER_UNIT_PATH" ]]
+}
+
+systemd_available_for_mode() {
+  local mode="$1"
+  if ! has_systemctl; then
+    return 1
+  fi
+
+  case "$mode" in
+    system)
+      [[ "$EUID" -eq 0 ]]
+      ;;
+    user)
+      "$SYSTEMCTL_BIN" --user --version >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+service_mode() {
+  if system_unit_installed && systemd_available_for_mode system; then
+    echo "system"
+  elif user_unit_installed && systemd_available_for_mode user; then
+    echo "user"
+  else
+    echo "nohup"
+  fi
+}
+
+systemctl_cmd() {
+  local mode="$1"
+  shift
+
+  case "$mode" in
+    system)
+      "$SYSTEMCTL_BIN" "$@"
+      ;;
+    user)
+      "$SYSTEMCTL_BIN" --user "$@"
+      ;;
+    *)
+      echo "invalid systemd mode: $mode" >&2
+      return 1
+      ;;
+  esac
+}
+
+journalctl_cmd() {
+  local mode="$1"
+  shift
+
+  if [[ "$mode" == "system" ]]; then
+    "$JOURNALCTL_BIN" "$@"
+  elif [[ "$mode" == "user" ]]; then
+    "$JOURNALCTL_BIN" --user "$@"
+  else
+    echo "invalid journal mode: $mode" >&2
+    return 1
   fi
 }
 
@@ -46,6 +128,10 @@ running_pid() {
   return 1
 }
 
+clear_pid_file() {
+  rm -f "$PID_FILE"
+}
+
 ensure_runtime() {
   if [[ -f "$SERVER_JS" ]]; then
     return 0
@@ -55,7 +141,110 @@ ensure_runtime() {
   exit 1
 }
 
-start() {
+render_unit() {
+  local mode="$1"
+  local target="$2"
+
+  cat > "$target" <<EOF
+[Unit]
+Description=claw-trace service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$APP_DIR
+Environment=NODE_ENV=production
+Environment=PORT=$PORT
+Environment=HOST=$HOST
+Environment=SESSIONS_DIR=$SESSIONS_DIR
+Environment=RAW_STREAM_FILE=$RAW_STREAM_FILE
+Environment=DATABASE_FILE=$DATABASE_FILE
+ExecStart=$APP_DIR/claw-trace run-server
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=$(if [[ "$mode" == "system" ]]; then echo multi-user.target; else echo default.target; fi)
+EOF
+}
+
+setup_service() {
+  local requested_mode="auto"
+  case "${1:---auto}" in
+    --auto) requested_mode="auto" ;;
+    --system) requested_mode="system" ;;
+    --user) requested_mode="user" ;;
+    *)
+      echo "usage: claw-trace setup-service [--auto|--system|--user]" >&2
+      exit 1
+      ;;
+  esac
+
+  local mode
+  if [[ "$requested_mode" == "auto" ]]; then
+    if systemd_available_for_mode system; then
+      mode="system"
+    elif systemd_available_for_mode user; then
+      mode="user"
+    else
+      echo "systemd unavailable; keeping nohup fallback"
+      return 1
+    fi
+  else
+    mode="$requested_mode"
+    if ! systemd_available_for_mode "$mode"; then
+      echo "systemd mode '$mode' is not available on this machine/user" >&2
+      return 1
+    fi
+  fi
+
+  local unit_path
+  if [[ "$mode" == "system" ]]; then
+    unit_path="$SYSTEM_UNIT_PATH"
+  else
+    unit_path="$USER_UNIT_PATH"
+    mkdir -p "$USER_UNIT_DIR"
+  fi
+
+  local tmp_unit
+  tmp_unit="$(mktemp)"
+  trap 'rm -f "$tmp_unit"' RETURN
+  render_unit "$mode" "$tmp_unit"
+  mkdir -p "$(dirname "$unit_path")"
+  cp "$tmp_unit" "$unit_path"
+
+  if ! systemctl_cmd "$mode" daemon-reload >/dev/null 2>&1; then
+    rm -f "$unit_path"
+    echo "systemd detected but daemon-reload failed; using nohup fallback" >&2
+    return 1
+  fi
+
+  if ! systemctl_cmd "$mode" enable "$SERVICE_NAME" >/dev/null 2>&1; then
+    rm -f "$unit_path"
+    systemctl_cmd "$mode" daemon-reload >/dev/null 2>&1 || true
+    echo "failed to enable $SERVICE_NAME in $mode mode; using nohup fallback" >&2
+    return 1
+  fi
+
+  clear_pid_file
+  echo "systemd service installed: $unit_path"
+  echo "service mode: $mode"
+}
+
+run_server() {
+  ensure_runtime
+  exec env \
+    NODE_ENV=production \
+    PORT="$PORT" \
+    HOST="$HOST" \
+    SESSIONS_DIR="$SESSIONS_DIR" \
+    RAW_STREAM_FILE="$RAW_STREAM_FILE" \
+    DATABASE_FILE="$DATABASE_FILE" \
+    node "$SERVER_JS"
+}
+
+start_nohup() {
   if pid="$(running_pid)"; then
     echo "claw-trace already running (pid=$pid)"
     return 0
@@ -63,14 +252,7 @@ start() {
 
   ensure_runtime
 
-  nohup env \
-    NODE_ENV=production \
-    PORT="$PORT" \
-    HOST="$HOST" \
-    SESSIONS_DIR="$SESSIONS_DIR" \
-    RAW_STREAM_FILE="$RAW_STREAM_FILE" \
-    DATABASE_FILE="$DATABASE_FILE" \
-    node "$SERVER_JS" >>"$LOG_FILE" 2>&1 &
+  nohup "$APP_DIR/claw-trace" run-server >>"$LOG_FILE" 2>&1 &
 
   local pid=$!
   echo "$pid" > "$PID_FILE"
@@ -78,6 +260,7 @@ start() {
 
   if kill -0 "$pid" 2>/dev/null; then
     echo "claw-trace started (pid=$pid)"
+    echo "mode: nohup"
     echo "url: http://$HOST:$PORT"
     echo "log: $LOG_FILE"
     echo "db: $DATABASE_FILE"
@@ -87,10 +270,51 @@ start() {
   fi
 }
 
+start() {
+  local mode
+  mode="$(service_mode)"
+
+  if [[ "$mode" == "nohup" ]]; then
+    start_nohup
+    return 0
+  fi
+
+  ensure_runtime
+  systemctl_cmd "$mode" daemon-reload >/dev/null 2>&1 || true
+  systemctl_cmd "$mode" start "$SERVICE_NAME"
+  sleep 0.8
+
+  if systemctl_cmd "$mode" is-active --quiet "$SERVICE_NAME"; then
+    clear_pid_file
+    echo "claw-trace started"
+    echo "mode: systemd-$mode"
+    echo "url: http://$HOST:$PORT"
+    if [[ "$mode" == "system" ]]; then
+      echo "logs: journalctl -u $SERVICE_NAME -f"
+    else
+      echo "logs: journalctl --user -u $SERVICE_NAME -f"
+    fi
+    echo "db: $DATABASE_FILE"
+  else
+    echo "failed to start via systemd ($mode)" >&2
+    exit 1
+  fi
+}
+
 stop() {
+  local mode
+  mode="$(service_mode)"
+
+  if [[ "$mode" != "nohup" ]]; then
+    systemctl_cmd "$mode" stop "$SERVICE_NAME" || true
+    clear_pid_file
+    echo "claw-trace stopped (mode: systemd-$mode)"
+    return 0
+  fi
+
   if pid="$(running_pid)"; then
     kill "$pid" 2>/dev/null || true
-    rm -f "$PID_FILE"
+    clear_pid_file
     echo "claw-trace stopped"
   else
     echo "claw-trace is not running"
@@ -100,15 +324,39 @@ stop() {
 status() {
   local v
   v="$(version)"
+  local mode
+  mode="$(service_mode)"
+
+  if [[ "$mode" != "nohup" ]]; then
+    local active_state enabled_state
+    active_state="$(systemctl_cmd "$mode" is-active "$SERVICE_NAME" 2>/dev/null || true)"
+    enabled_state="$(systemctl_cmd "$mode" is-enabled "$SERVICE_NAME" 2>/dev/null || true)"
+    echo "claw-trace $v $active_state (mode=systemd-$mode, enabled=$enabled_state)"
+    if [[ "$mode" == "system" ]]; then
+      echo "logs: journalctl -u $SERVICE_NAME -f"
+    else
+      echo "logs: journalctl --user -u $SERVICE_NAME -f"
+    fi
+    return 0
+  fi
+
   if pid="$(running_pid)"; then
-    echo "claw-trace $v running (pid=$pid)"
+    echo "claw-trace $v running (pid=$pid, mode=nohup)"
     echo "log: $LOG_FILE"
   else
-    echo "claw-trace $v stopped"
+    echo "claw-trace $v stopped (mode=nohup)"
   fi
 }
 
 logs() {
+  local mode
+  mode="$(service_mode)"
+
+  if [[ "$mode" != "nohup" ]] && has_journalctl; then
+    journalctl_cmd "$mode" -u "$SERVICE_NAME" -f -n 200
+    return 0
+  fi
+
   touch "$LOG_FILE"
   tail -f "$LOG_FILE"
 }
@@ -128,9 +376,12 @@ check_fail() {
 doctor() {
   local failed=0
   local warned=0
+  local mode
+  mode="$(service_mode)"
 
   echo "claw-trace doctor"
   echo "version: $(version)"
+  echo "service_mode: $mode"
   echo "host: $HOST"
   echo "port: $PORT"
   echo "sessions_dir: $SESSIONS_DIR"
@@ -139,11 +390,27 @@ doctor() {
   echo "database_file: $DATABASE_FILE"
   echo
 
-  if pid="$(running_pid)"; then
-    check_ok "服务进程在运行 (pid=$pid)"
+  if [[ "$mode" != "nohup" ]]; then
+    if systemctl_cmd "$mode" is-active --quiet "$SERVICE_NAME"; then
+      check_ok "systemd 服务在运行 (mode=$mode)"
+    else
+      check_fail "systemd 服务未运行（可执行: claw-trace start）"
+      failed=1
+    fi
+
+    if systemctl_cmd "$mode" is-enabled --quiet "$SERVICE_NAME"; then
+      check_ok "systemd 已启用开机自启"
+    else
+      check_warn "systemd 未启用开机自启（可执行: claw-trace setup-service --$mode）"
+      warned=1
+    fi
   else
-    check_fail "服务未运行（可执行: claw-trace start）"
-    failed=1
+    if pid="$(running_pid)"; then
+      check_ok "服务进程在运行 (pid=$pid, mode=nohup)"
+    else
+      check_fail "服务未运行（可执行: claw-trace start）"
+      failed=1
+    fi
   fi
 
   if [[ -d "$SESSIONS_DIR" ]]; then
@@ -254,7 +521,14 @@ update() {
   fi
 
   local was_running=0
-  if running_pid >/dev/null; then
+  local mode_before
+  mode_before="$(service_mode)"
+  if [[ "$mode_before" != "nohup" ]]; then
+    if systemctl_cmd "$mode_before" is-active --quiet "$SERVICE_NAME"; then
+      was_running=1
+    fi
+    stop
+  elif running_pid >/dev/null; then
     was_running=1
     stop
   fi
@@ -271,9 +545,11 @@ update() {
     exit 1
   fi
 
+  "$APP_DIR/claw-trace" setup-service --auto >/dev/null 2>&1 || true
+
   echo "updated: $current -> $(version)"
   if [[ "$was_running" == "1" ]]; then
-    start
+    "$APP_DIR/claw-trace" start
   fi
 }
 
@@ -286,31 +562,42 @@ rollback() {
   fi
 
   local was_running=0
-  if running_pid >/dev/null; then
+  local mode_before
+  mode_before="$(service_mode)"
+  if [[ "$mode_before" != "nohup" ]]; then
+    if systemctl_cmd "$mode_before" is-active --quiet "$SERVICE_NAME"; then
+      was_running=1
+    fi
+    stop
+  elif running_pid >/dev/null; then
     was_running=1
     stop
   fi
 
   cp -a "$latest_backup/." "$APP_DIR/"
+  "$APP_DIR/claw-trace" setup-service --auto >/dev/null 2>&1 || true
   echo "rolled back using $latest_backup"
 
   if [[ "$was_running" == "1" ]]; then
-    start
+    "$APP_DIR/claw-trace" start
   fi
 }
 
 usage() {
   cat <<EOF
 claw-trace commands:
-  start              Start service in background
-  stop               Stop service
-  restart            Restart service
-  status             Show service status
-  logs               Tail service logs
-  doctor             Health checks (process/files/api/raw-stream)
-  version            Show installed version
-  update [tag]       Update from GitHub release (default: latest)
-  rollback           Roll back to latest local backup
+  start                      Start service
+  stop                       Stop service
+  restart                    Restart service
+  status                     Show service status
+  logs                       Tail service logs
+  doctor                     Health checks (process/files/api/raw-stream)
+  version                    Show installed version
+  setup-service [--auto|--system|--user]
+                             Install and enable a systemd unit when available
+  service-mode               Show current service manager mode
+  update [tag]               Update from GitHub release (default: latest)
+  rollback                   Roll back to latest local backup
 EOF
 }
 
@@ -325,6 +612,9 @@ case "$cmd" in
   logs) logs ;;
   doctor) doctor ;;
   version) version ;;
+  setup-service) setup_service "${1:---auto}" ;;
+  service-mode) service_mode ;;
+  run-server) run_server ;;
   update) update "${1:-latest}" ;;
   rollback) rollback ;;
   *) usage; exit 1 ;;

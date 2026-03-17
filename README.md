@@ -27,6 +27,13 @@ $HOME/claw-trace/claw-trace start
 claw-trace start
 ```
 
+如果机器支持 systemd，安装时会自动注册并启用 `claw-trace.service`：
+- 服务异常退出后自动重启
+- 机器重启后自动拉起
+- `claw-trace logs` 会自动走 `journalctl`
+
+如果当前环境没有可用的 systemd，则自动回退到原来的 nohup 模式。
+
 打开浏览器访问 `http://<机器IP>:8787`。
 
 > 已有旧版？直接重新执行安装命令即可，脚本会自动停掉旧进程并用新版本拉起。
@@ -40,6 +47,8 @@ claw-trace restart     # 重启服务
 claw-trace status      # 查看运行状态
 claw-trace logs        # 查看日志
 claw-trace doctor      # 一键健康检查
+claw-trace setup-service   # 手动重装/启用 systemd 托管
+claw-trace service-mode    # 查看当前托管模式（systemd/nohup）
 claw-trace update      # 更新到最新版
 claw-trace update v1.0.2  # 更新到指定版本
 claw-trace rollback    # 回滚到上一个版本

@@ -155,6 +155,14 @@ if [[ ! -d "$INSTALL_DIR/node_modules/better-sqlite3" ]]; then
   exit 1
 fi
 
+SYSTEMD_MODE=""
+if SYSTEMD_OUTPUT="$($INSTALL_DIR/claw-trace setup-service --auto 2>&1)"; then
+  echo "$SYSTEMD_OUTPUT"
+  SYSTEMD_MODE="$($INSTALL_DIR/claw-trace service-mode 2>/dev/null || true)"
+else
+  echo "$SYSTEMD_OUTPUT"
+fi
+
 if ! path_has_bin_dir; then
   ensure_shell_path
 fi
@@ -166,6 +174,12 @@ fi
 
 echo "[claw-trace] installed to $INSTALL_DIR"
 echo "[claw-trace] command linked: $BIN_DIR/claw-trace"
+if [[ -n "$SYSTEMD_MODE" ]] && [[ "$SYSTEMD_MODE" != "nohup" ]]; then
+  echo "[claw-trace] service manager: systemd-$SYSTEMD_MODE"
+  echo "[claw-trace] enabled for auto-start on reboot"
+else
+  echo "[claw-trace] service manager: nohup fallback"
+fi
 if path_has_bin_dir; then
   echo "[claw-trace] start service: claw-trace start"
 else
