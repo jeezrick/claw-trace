@@ -8,6 +8,63 @@ BIN_DIR="${CLAW_TRACE_BIN_DIR:-$HOME/.local/bin}"
 EXISTING_CMD="$INSTALL_DIR/claw-trace"
 WAS_RUNNING=0
 
+path_has_bin_dir() {
+  case ":${PATH:-}:" in
+    *":$BIN_DIR:"*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+append_line_once() {
+  local file="$1"
+  local line="$2"
+
+  mkdir -p "$(dirname "$file")"
+  touch "$file"
+
+  if ! grep -Fqx "$line" "$file" 2>/dev/null; then
+    printf '\n%s\n' "$line" >> "$file"
+  fi
+}
+
+ensure_shell_path() {
+  local line="export PATH=\"$BIN_DIR:\$PATH\""
+  local shell_name="$(basename "${SHELL:-}")"
+  local targets=("$HOME/.profile")
+
+  case "$shell_name" in
+    bash)
+      targets+=("$HOME/.bashrc" "$HOME/.bash_profile")
+      ;;
+    zsh)
+      targets+=("$HOME/.zshrc" "$HOME/.zprofile")
+      ;;
+    *)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        targets+=("$HOME/.bashrc")
+      fi
+      if [[ -f "$HOME/.bash_profile" ]]; then
+        targets+=("$HOME/.bash_profile")
+      fi
+      if [[ -f "$HOME/.zshrc" ]]; then
+        targets+=("$HOME/.zshrc")
+      fi
+      if [[ -f "$HOME/.zprofile" ]]; then
+        targets+=("$HOME/.zprofile")
+      fi
+      ;;
+  esac
+
+  local file
+  for file in "${targets[@]}"; do
+    append_line_once "$file" "$line"
+  done
+}
+
 if [[ "$TAG" == "latest" ]]; then
   TAG="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
 fi
@@ -98,6 +155,10 @@ if [[ ! -d "$INSTALL_DIR/node_modules/better-sqlite3" ]]; then
   exit 1
 fi
 
+if ! path_has_bin_dir; then
+  ensure_shell_path
+fi
+
 if [[ "$WAS_RUNNING" == "1" ]]; then
   echo "[claw-trace] restarting service on the freshly installed version"
   "$INSTALL_DIR/claw-trace" start
@@ -105,5 +166,10 @@ fi
 
 echo "[claw-trace] installed to $INSTALL_DIR"
 echo "[claw-trace] command linked: $BIN_DIR/claw-trace"
-echo "[claw-trace] if command not found, add to PATH: export PATH=\"$BIN_DIR:\$PATH\""
-echo "[claw-trace] start service: claw-trace start"
+if path_has_bin_dir; then
+  echo "[claw-trace] start service: claw-trace start"
+else
+  echo "[claw-trace] added $BIN_DIR to common shell startup files for future terminals"
+  echo "[claw-trace] start service now: $INSTALL_DIR/claw-trace start"
+  echo "[claw-trace] after opening a new terminal, you can also run: claw-trace start"
+fi

@@ -15,7 +15,13 @@ OpenClaw Agent 执行链路可视化服务。实时展示每个 session 的完�
 curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | bash
 ```
 
-安装完成后启动服务：
+安装完成后可立刻启动服务：
+
+```bash
+$HOME/claw-trace/claw-trace start
+```
+
+安装脚本会自动把 `~/.local/bin` 写入常见 shell 启动文件；新开一个终端后，也可以直接使用：
 
 ```bash
 claw-trace start

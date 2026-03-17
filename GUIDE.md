@@ -120,17 +120,25 @@ OpenClaw sessions/*.jsonl
 curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | bash -s -- latest
 ```
 
-如果提示 `claw-trace: command not found`，执行：
+安装脚本会自动把 `~/.local/bin` 写入常见 shell 启动文件；如果当前终端还没刷新，直接用绝对路径即可：
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+$HOME/claw-trace/claw-trace start
+$HOME/claw-trace/claw-trace status
+```
+
+新开一个终端后，也可以直接使用：
+
+```bash
+claw-trace start
+claw-trace status
 ```
 
 ### 2）启动并访问
 
 ```bash
-claw-trace start
-claw-trace status
+$HOME/claw-trace/claw-trace start
+$HOME/claw-trace/claw-trace status
 ```
 
 访问地址：`http://<机器IP>:8787`
