@@ -1,6 +1,6 @@
 {
   "name": "openclaw-trace-service",
-  "version": "1.1.16",
+  "version": "1.1.17",
   "private": true,
   "description": "Session trace web service for OpenClaw",
   "main": "server.js",
