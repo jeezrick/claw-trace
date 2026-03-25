@@ -266,6 +266,9 @@ export default function App() {
         const currentSessionId = useAppStore.getState().selectedSessionId;
         if (currentSessionId) {
           void loadActionHistory(currentSessionId, { silent: true });
+          // Also re-fetch session detail (terminal messages + chain) so the chain panel
+          // recovers correctly after a disconnect, not just the action history list.
+          void loadSessionDetail(currentSessionId, { silent: true });
         }
       }
     });
@@ -281,6 +284,13 @@ export default function App() {
           removeSessionFromList(payload.sessionId ?? '');
         } else if (payload.session) {
           patchSession(payload.session);
+          // If the updated session is currently selected, also refresh its terminal
+          // messages and chain so the detail panel stays in sync without waiting for
+          // a separate action_history_updated event.
+          const currentSessionId = useAppStore.getState().selectedSessionId;
+          if (payload.session.id === currentSessionId) {
+            void loadSessionDetail(currentSessionId, { silent: true });
+          }
         }
       });
     });

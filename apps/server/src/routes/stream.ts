@@ -134,7 +134,13 @@ export function registerStreamRoutes(app: FastifyInstance, deps: StreamDependenc
     const onSessionChanged = (payload: { change: 'added' | 'updated' | 'removed'; session?: SessionSummary; sessionId?: string }) => {
       const id = payload.session?.id ?? payload.sessionId;
       if (workspaceSessionIds && id && !workspaceSessionIds.has(id)) {
-        return;
+        // For newly added sessions, admit them into the workspace filter going forward
+        // so subsequent updates are not silently dropped.
+        if (payload.change === 'added' && id) {
+          workspaceSessionIds.add(id);
+        } else {
+          return;
+        }
       }
       writeSseEvent(reply.raw, 'session_updated', payload);
     };
