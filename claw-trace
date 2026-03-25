@@ -553,7 +553,8 @@ update() {
   echo "backup saved to $backup_dir"
 
   cp -a "$src/." "$APP_DIR/"
-  chmod +x "$APP_DIR/claw-trace" "$APP_DIR/run.sh" || true
+  # build-bundle.sh is a dev tool not included in release bundles; ignore if absent.
+  chmod +x "$APP_DIR/claw-trace" "$APP_DIR/run.sh" 2>/dev/null || true
 
   # Re-create the ~/.local/bin symlink so the command stays reachable after update.
   local bin_dir="${CLAW_TRACE_BIN_DIR:-$HOME/.local/bin}"
