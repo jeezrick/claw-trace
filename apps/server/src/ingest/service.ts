@@ -155,6 +155,45 @@ function extractSegmentText(segment: string): string {
   return rest ? `${firstLine}\n${rest}`.trim() : firstLine;
 }
 
+function stripFeishuMetadataPreamble(value: string): string {
+  // The Feishu plugin prepends structured metadata before the actual user message:
+  //   [timestamp] Feishu[...] | sender [msg:...]
+  //   Conversation info (untrusted metadata):
+  //   ```json
+  //   {...}
+  //   ```
+  //   Sender (untrusted metadata):
+  //   ```json
+  //   {...}
+  //   ```
+  //   Replied message (untrusted, for context):
+  //   ```json
+  //   {...}
+  //   ```
+  //   <actual user message here>
+  //
+  // We detect this by the presence of "untrusted metadata" and strip everything
+  // up to and including the last closing ``` fence.
+  if (!value.includes('(untrusted metadata)') && !value.includes('(untrusted, for context)')) {
+    return value;
+  }
+
+  // Find the last closing fence (a line that is exactly ```)
+  const fenceRe = /^```\s*$/gm;
+  let lastFenceEnd = -1;
+  let match: RegExpExecArray | null;
+  while ((match = fenceRe.exec(value)) !== null) {
+    lastFenceEnd = match.index + match[0].length;
+  }
+
+  if (lastFenceEnd === -1) {
+    return value;
+  }
+
+  const after = value.slice(lastFenceEnd).trim();
+  return after || value;
+}
+
 function normalizeUserText(value: string): string {
   const raw = value.trim();
 
@@ -162,23 +201,26 @@ function normalizeUserText(value: string): string {
     return '';
   }
 
+  // Strip Feishu channel metadata preamble (conversation info, sender, reply context JSON blocks).
+  const stripped = stripFeishuMetadataPreamble(raw);
+
   // Collect positions of all [message_id:...] markers.
   // In multi-turn conversation history, OpenClaw prepends earlier messages with these
   // markers before the actual current user message. We want the last segment with content.
   const markerRe = /\[message_id:[^\]]*\]/g;
   const markerPositions: number[] = [];
   let m: RegExpExecArray | null;
-  while ((m = markerRe.exec(raw)) !== null) {
+  while ((m = markerRe.exec(stripped)) !== null) {
     markerPositions.push(m.index);
   }
 
   if (markerPositions.length > 0) {
     // Try segments from last to first; return the first one that has actual text.
     for (let i = markerPositions.length - 1; i >= 0; i--) {
-      const markerLineEnd = raw.indexOf('\n', markerPositions[i]);
+      const markerLineEnd = stripped.indexOf('\n', markerPositions[i]);
       const segStart = markerLineEnd >= 0 ? markerLineEnd + 1 : markerPositions[i];
-      const segEnd = i + 1 < markerPositions.length ? markerPositions[i + 1] : raw.length;
-      const segment = raw.slice(segStart, segEnd).trim();
+      const segEnd = i + 1 < markerPositions.length ? markerPositions[i + 1] : stripped.length;
+      const segment = stripped.slice(segStart, segEnd).trim();
       if (segment) {
         return extractSegmentText(segment);
       }
@@ -189,8 +231,8 @@ function normalizeUserText(value: string): string {
   // No markers (or all marker segments empty): return the full content.
   // Strip a leading [tag] on the first line if present (e.g. "[system]"), then
   // strip any speaker prefix from the first line.
-  const cleaned = raw.replace(/^\[[^\]]+\]\s*\n?/, '').trim();
-  return extractSegmentText(cleaned || raw);
+  const cleaned = stripped.replace(/^\[[^\]]+\]\s*\n?/, '').trim();
+  return extractSegmentText(cleaned || stripped);
 }
 
 function cleanAssistantText(value: string): string {
