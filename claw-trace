@@ -282,9 +282,18 @@ start() {
   ensure_runtime
   systemctl_cmd "$mode" daemon-reload >/dev/null 2>&1 || true
   systemctl_cmd "$mode" start "$SERVICE_NAME"
-  sleep 0.8
 
-  if systemctl_cmd "$mode" is-active --quiet "$SERVICE_NAME"; then
+  # Poll up to 8 seconds for the service to become active.
+  local i active=0
+  for i in 1 2 3 4 5 6 7 8; do
+    sleep 1
+    if systemctl_cmd "$mode" is-active --quiet "$SERVICE_NAME"; then
+      active=1
+      break
+    fi
+  done
+
+  if [[ "$active" -eq 1 ]]; then
     clear_pid_file
     echo "claw-trace started"
     echo "mode: systemd-$mode"
@@ -504,7 +513,7 @@ update() {
   local url="https://github.com/$REPO/releases/download/$tag/trace-service.tgz"
   local tmp
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
+  trap "rm -rf '$tmp'" EXIT
 
   echo "downloading $url"
   if ! curl -fsSL "$url" | tar -xz -C "$tmp"; then
