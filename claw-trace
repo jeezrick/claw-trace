@@ -588,10 +588,6 @@ update() {
     echo "npm not found — skipping dependency install (existing node_modules kept)" >&2
     echo "if the service fails to start, run: npm ci --omit=dev --workspace @claw-trace/server" >&2
     # Don't restore backup: new files are already in place and old node_modules are preserved.
-    # Just restart the service so the updated code runs.
-    if ! "$APP_DIR/claw-trace" setup-service --auto 2>&1; then
-      echo "note: systemd setup unavailable, staying in nohup mode"
-    fi
     echo "updated: $current -> $(version)"
     if [[ "$was_running" == "1" ]]; then
       "$APP_DIR/claw-trace" start
@@ -609,9 +605,6 @@ update() {
     exit 1
   fi
 
-  if ! "$APP_DIR/claw-trace" setup-service --auto 2>&1; then
-    echo "note: systemd setup unavailable, staying in nohup mode"
-  fi
 
   echo "updated: $current -> $(version)"
   "$APP_DIR/claw-trace" start
