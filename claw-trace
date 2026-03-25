@@ -234,6 +234,9 @@ setup_service() {
 
 run_server() {
   ensure_runtime
+  # Load nvm so node is in PATH when running under systemd (no interactive shell).
+  # shellcheck source=/dev/null
+  [[ -s "$HOME/.nvm/nvm.sh" ]] && source "$HOME/.nvm/nvm.sh"
   exec env \
     NODE_ENV=production \
     PORT="$PORT" \
