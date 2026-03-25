@@ -574,26 +574,12 @@ update() {
   mkdir -p "$bin_dir"
   ln -sf "$APP_DIR/claw-trace" "$bin_dir/claw-trace"
 
-  # npm may be installed via nvm and only available in interactive shells.
-  # Try to find it in common nvm / fnm / system locations before giving up.
+  # Load nvm if available so that npm and node are in PATH.
+  # shellcheck source=/dev/null
+  [[ -s "$HOME/.nvm/nvm.sh" ]] && source "$HOME/.nvm/nvm.sh"
+
   local npm_bin
   npm_bin="$(command -v npm 2>/dev/null || true)"
-  if [[ -z "$npm_bin" ]]; then
-    for candidate in \
-      "$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)/bin/npm" \
-      /usr/local/bin/npm /usr/bin/npm; do
-      if [[ -x "$candidate" ]]; then
-        npm_bin="$candidate"
-        break
-      fi
-    done
-  fi
-
-  # If npm was found via a non-PATH location (e.g. nvm), prepend its bin dir to
-  # PATH so that 'node' invoked internally by npm ci is also resolvable.
-  if [[ -n "$npm_bin" ]]; then
-    export PATH="$(dirname "$npm_bin"):$PATH"
-  fi
 
   if [[ -z "$npm_bin" ]]; then
     echo "npm not found — skipping dependency install (existing node_modules kept)" >&2
