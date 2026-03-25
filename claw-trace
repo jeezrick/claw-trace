@@ -589,6 +589,12 @@ update() {
     done
   fi
 
+  # If npm was found via a non-PATH location (e.g. nvm), prepend its bin dir to
+  # PATH so that 'node' invoked internally by npm ci is also resolvable.
+  if [[ -n "$npm_bin" ]]; then
+    export PATH="$(dirname "$npm_bin"):$PATH"
+  fi
+
   if [[ -z "$npm_bin" ]]; then
     echo "npm not found — skipping dependency install (existing node_modules kept)" >&2
     echo "if the service fails to start, run: npm ci --omit=dev --workspace @claw-trace/server" >&2
