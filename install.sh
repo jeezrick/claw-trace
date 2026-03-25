@@ -163,9 +163,9 @@ else
   echo "$SYSTEMD_OUTPUT"
 fi
 
-if ! path_has_bin_dir; then
-  ensure_shell_path
-fi
+# Always write the PATH export to shell startup files so that new login sessions
+# (e.g. fresh SSH connections) can find the claw-trace command without manual setup.
+ensure_shell_path
 
 if [[ "$WAS_RUNNING" == "1" ]]; then
   echo "[claw-trace] restarting service on the freshly installed version"

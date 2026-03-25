@@ -260,8 +260,10 @@ function toTerminalMessage(
 ): TerminalMessageItem {
   const payload = getPayloadRecord(terminalAction.payload);
   const steps = actions.map(toStep);
-  const triggerUser =
-    [...actions].reverse().find((action) => action.kind === 'user') ?? null;
+  // Use the first user action in the window (not the last) as the trigger so that the
+  // terminal message label reflects the message that actually initiated this reply chain.
+  // Later user actions within the same window are typically system-injected context turns.
+  const triggerUser = actions.find((action) => action.kind === 'user') ?? null;
   const triggerPayload = getPayloadRecord(triggerUser?.payload ?? null);
   const fullText =
     getString(payload, 'text') ?? terminalAction.summary ?? terminalAction.title ?? '(empty text)';

@@ -141,8 +141,18 @@ function extractTextContent(content: unknown): string {
 }
 
 function stripSpeakerPrefix(value: string): string {
-  const match = value.match(/^[^:\n]{1,120}:\s*([\s\S]*)$/);
+  // Only strip simple single-word speaker labels like "Human:", "User:", "Assistant:".
+  // The prefix must be pure letters (no spaces, no punctuation) to avoid accidentally
+  // stripping content like "Here's my code: ..." or "Error: ...".
+  const match = value.match(/^[A-Za-z]{1,30}:\s*([\s\S]+)$/);
   return match ? match[1].trim() : value.trim();
+}
+
+function extractSegmentText(segment: string): string {
+  const lines = segment.split('\n');
+  const firstLine = stripSpeakerPrefix(lines[0]);
+  const rest = lines.slice(1).join('\n').trim();
+  return rest ? `${firstLine}\n${rest}`.trim() : firstLine;
 }
 
 function normalizeUserText(value: string): string {
@@ -152,34 +162,35 @@ function normalizeUserText(value: string): string {
     return '';
   }
 
-  const marker = raw.lastIndexOf('[message_id:');
-  if (marker >= 0) {
-    const lineBreakIndex = raw.indexOf('\n', marker);
-    const afterMarker = raw.slice(lineBreakIndex >= 0 ? lineBreakIndex + 1 : marker).trim();
+  // Collect positions of all [message_id:...] markers.
+  // In multi-turn conversation history, OpenClaw prepends earlier messages with these
+  // markers before the actual current user message. We want the last segment with content.
+  const markerRe = /\[message_id:[^\]]*\]/g;
+  const markerPositions: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = markerRe.exec(raw)) !== null) {
+    markerPositions.push(m.index);
+  }
 
-    if (afterMarker) {
-      const firstLineBreak = afterMarker.indexOf('\n');
-
-      if (firstLineBreak >= 0) {
-        const firstLine = stripSpeakerPrefix(afterMarker.slice(0, firstLineBreak));
-        const rest = afterMarker.slice(firstLineBreak + 1).trim();
-        return `${firstLine}${rest ? `\n${rest}` : ''}`.trim();
+  if (markerPositions.length > 0) {
+    // Try segments from last to first; return the first one that has actual text.
+    for (let i = markerPositions.length - 1; i >= 0; i--) {
+      const markerLineEnd = raw.indexOf('\n', markerPositions[i]);
+      const segStart = markerLineEnd >= 0 ? markerLineEnd + 1 : markerPositions[i];
+      const segEnd = i + 1 < markerPositions.length ? markerPositions[i + 1] : raw.length;
+      const segment = raw.slice(segStart, segEnd).trim();
+      if (segment) {
+        return extractSegmentText(segment);
       }
-
-      return stripSpeakerPrefix(afterMarker);
     }
+    // All segments were empty — fall through to raw text below.
   }
 
-  const lines = raw
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length > 0) {
-    return stripSpeakerPrefix(lines[lines.length - 1].replace(/^\[[^\]]+\]\s*/, '').trim());
-  }
-
-  return stripSpeakerPrefix(raw.replace(/^\[[^\]]+\]\s*/, '').trim());
+  // No markers (or all marker segments empty): return the full content.
+  // Strip a leading [tag] on the first line if present (e.g. "[system]"), then
+  // strip any speaker prefix from the first line.
+  const cleaned = raw.replace(/^\[[^\]]+\]\s*\n?/, '').trim();
+  return extractSegmentText(cleaned || raw);
 }
 
 function cleanAssistantText(value: string): string {

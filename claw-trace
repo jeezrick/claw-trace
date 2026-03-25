@@ -490,7 +490,7 @@ update() {
   fi
 
   if [[ -z "$tag" ]]; then
-    echo "unable to resolve release tag" >&2
+    echo "unable to resolve release tag — check network or specify a version explicitly" >&2
     exit 1
   fi
 
@@ -507,7 +507,10 @@ update() {
   trap 'rm -rf "$tmp"' EXIT
 
   echo "downloading $url"
-  curl -fsSL "$url" | tar -xz -C "$tmp"
+  if ! curl -fsSL "$url" | tar -xz -C "$tmp"; then
+    echo "download or extraction failed for $tag" >&2
+    exit 1
+  fi
 
   local src="$tmp/trace-service"
   if [[ ! -f "$src/claw-trace" ]]; then
@@ -520,6 +523,11 @@ update() {
     exit 1
   fi
 
+  if [[ ! -f "$src/apps/server/dist/index.js" ]]; then
+    echo "invalid bundle: server runtime missing (apps/server/dist/index.js)" >&2
+    exit 1
+  fi
+
   local was_running=0
   local mode_before
   mode_before="$(service_mode)"
@@ -528,24 +536,50 @@ update() {
       was_running=1
     fi
     stop
+    # Wait up to 5s for systemd to actually stop the service before overwriting files.
+    local i
+    for i in 1 2 3 4 5; do
+      systemctl_cmd "$mode_before" is-active --quiet "$SERVICE_NAME" 2>/dev/null || break
+      sleep 1
+    done
   elif running_pid >/dev/null; then
     was_running=1
     stop
+    sleep 1
   fi
 
-  cp -a "$APP_DIR" "$APP_DIR.backup.$(date +%Y%m%d-%H%M%S)"
-  cp -a "$src/." "$APP_DIR/"
-  chmod +x "$APP_DIR/run.sh" "$APP_DIR/build-bundle.sh" "$APP_DIR/claw-trace" || true
+  local backup_dir="$APP_DIR.backup.$(date +%Y%m%d-%H%M%S)"
+  cp -a "$APP_DIR" "$backup_dir"
+  echo "backup saved to $backup_dir"
 
-  if command -v npm >/dev/null 2>&1; then
-    echo "installing runtime dependencies for this machine"
-    (cd "$APP_DIR" && npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false)
-  else
+  cp -a "$src/." "$APP_DIR/"
+  chmod +x "$APP_DIR/claw-trace" "$APP_DIR/run.sh" || true
+
+  # Re-create the ~/.local/bin symlink so the command stays reachable after update.
+  local bin_dir="${CLAW_TRACE_BIN_DIR:-$HOME/.local/bin}"
+  mkdir -p "$bin_dir"
+  ln -sf "$APP_DIR/claw-trace" "$bin_dir/claw-trace"
+
+  if ! command -v npm >/dev/null 2>&1; then
     echo "npm is required to install runtime dependencies for v2" >&2
+    echo "restoring backup..." >&2
+    cp -a "$backup_dir/." "$APP_DIR/"
     exit 1
   fi
 
-  "$APP_DIR/claw-trace" setup-service --auto >/dev/null 2>&1 || true
+  echo "installing runtime dependencies for this machine"
+  if ! (cd "$APP_DIR" && npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false); then
+    echo "npm ci failed — restoring backup" >&2
+    cp -a "$backup_dir/." "$APP_DIR/"
+    if [[ "$was_running" == "1" ]]; then
+      "$APP_DIR/claw-trace" start
+    fi
+    exit 1
+  fi
+
+  if ! "$APP_DIR/claw-trace" setup-service --auto 2>&1; then
+    echo "note: systemd setup unavailable, staying in nohup mode"
+  fi
 
   echo "updated: $current -> $(version)"
   if [[ "$was_running" == "1" ]]; then
