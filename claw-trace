@@ -561,6 +561,10 @@ update() {
   cp -a "$APP_DIR" "$backup_dir"
   echo "backup saved to $backup_dir"
 
+  # Unlink the running script before overwriting so bash's open fd keeps reading
+  # the old inode while the new file gets a fresh inode (prevents mid-script
+  # parse errors when bash reads the file while it is being replaced in place).
+  rm -f "$APP_DIR/claw-trace"
   cp -a "$src/." "$APP_DIR/"
   # build-bundle.sh is a dev tool not included in release bundles; ignore if absent.
   chmod +x "$APP_DIR/claw-trace" "$APP_DIR/run.sh" 2>/dev/null || true
