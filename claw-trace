@@ -606,9 +606,7 @@ update() {
   fi
 
   echo "updated: $current -> $(version)"
-  if [[ "$was_running" == "1" ]]; then
-    "$APP_DIR/claw-trace" start
-  fi
+  "$APP_DIR/claw-trace" start
 }
 
 rollback() {
@@ -635,10 +633,7 @@ rollback() {
   cp -a "$latest_backup/." "$APP_DIR/"
   "$APP_DIR/claw-trace" setup-service --auto >/dev/null 2>&1 || true
   echo "rolled back using $latest_backup"
-
-  if [[ "$was_running" == "1" ]]; then
-    "$APP_DIR/claw-trace" start
-  fi
+  "$APP_DIR/claw-trace" start
 }
 
 usage() {
