@@ -15,6 +15,12 @@ OpenClaw Agent 执行链路可视化服务。实时展示每个 session 的完�
 curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | bash
 ```
 
+内网 GitLab 安装：
+
+```bash
+curl -fsSL http://192.168.16.6/wonderful/claw-trace/-/raw/main/install.sh | env CLAW_TRACE_INSTALL_SOURCE=gitlab CLAW_TRACE_GITLAB_BASE_URL=http://192.168.16.6 CLAW_TRACE_REPO=wonderful/claw-trace bash -s -- latest
+```
+
 安装完成后可立刻启动服务：
 
 ```bash
