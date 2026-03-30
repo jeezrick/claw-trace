@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${CLAW_TRACE_REPO:-jeezrick/claw-trace}"
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 while [[ -L "$SCRIPT_PATH" ]]; do
   LINK_TARGET="$(readlink "$SCRIPT_PATH")"
@@ -12,6 +11,19 @@ while [[ -L "$SCRIPT_PATH" ]]; do
   fi
 done
 APP_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+INSTALL_SOURCE_FILE="$APP_DIR/.install-source.env"
+DEFAULT_REPO="jeezrick/claw-trace"
+SAVED_CLAW_TRACE_INSTALL_SOURCE=""
+SAVED_CLAW_TRACE_REPO=""
+SAVED_CLAW_TRACE_GITLAB_BASE_URL=""
+if [[ -f "$INSTALL_SOURCE_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$INSTALL_SOURCE_FILE"
+fi
+REPO="${CLAW_TRACE_REPO:-${SAVED_CLAW_TRACE_REPO:-$DEFAULT_REPO}}"
+INSTALL_SOURCE="${CLAW_TRACE_INSTALL_SOURCE:-${SAVED_CLAW_TRACE_INSTALL_SOURCE:-github}}"
+GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-${SAVED_CLAW_TRACE_GITLAB_BASE_URL:-}}"
+PROJECT_NAME="${REPO##*/}"
 STATE_DIR="${CLAW_TRACE_STATE_DIR:-$HOME/.local/state/claw-trace}"
 PID_FILE="$STATE_DIR/server.pid"
 LOG_FILE="${CLAW_TRACE_LOG_FILE:-/tmp/claw-trace.log}"
@@ -37,6 +49,99 @@ version() {
   else
     echo "unknown"
   fi
+}
+
+repo_api_path() {
+  printf '%s' "${REPO//\//%2F}"
+}
+
+normalize_gitlab_base_url() {
+  GITLAB_BASE_URL="${GITLAB_BASE_URL%/}"
+}
+
+download_with_retry() {
+  local url="$1"
+  local out="$2"
+  local tries=8
+  local i
+  for i in $(seq 1 "$tries"); do
+    if curl -fsSL "$url" -o "$out"; then
+      return 0
+    fi
+    echo "download failed (try $i/$tries), retry in 5s..." >&2
+    sleep 5
+  done
+  return 1
+}
+
+write_install_source_file() {
+  {
+    printf 'SAVED_CLAW_TRACE_INSTALL_SOURCE=%q\n' "$INSTALL_SOURCE"
+    printf 'SAVED_CLAW_TRACE_REPO=%q\n' "$REPO"
+    printf 'SAVED_CLAW_TRACE_GITLAB_BASE_URL=%q\n' "${GITLAB_BASE_URL%/}"
+  } > "$INSTALL_SOURCE_FILE"
+}
+
+prepare_update_bundle() {
+  local tag="$1"
+  local out="$2"
+  local tmp="$3"
+
+  case "$INSTALL_SOURCE" in
+    github)
+      local url="https://github.com/$REPO/releases/download/$tag/trace-service.tgz"
+      echo "downloading $url"
+      download_with_retry "$url" "$out"
+      ;;
+    gitlab)
+      if [[ -z "$GITLAB_BASE_URL" ]]; then
+        echo "CLAW_TRACE_GITLAB_BASE_URL is required when CLAW_TRACE_INSTALL_SOURCE=gitlab" >&2
+        return 1
+      fi
+      if ! command -v npm >/dev/null 2>&1; then
+        echo "npm is required to build updates from GitLab source" >&2
+        return 1
+      fi
+
+      local archive="$tmp/${PROJECT_NAME}-${tag}.tar.gz"
+      local src_dir="$tmp/gitlab-source"
+      local src_root
+      local url
+
+      normalize_gitlab_base_url
+      url="$GITLAB_BASE_URL/$REPO/-/archive/$tag/$PROJECT_NAME-$tag.tar.gz"
+
+      echo "downloading $url"
+      download_with_retry "$url" "$archive"
+
+      mkdir -p "$src_dir"
+      tar -xzf "$archive" -C "$src_dir"
+      src_root="$(find "$src_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+
+      if [[ -z "$src_root" ]] || [[ ! -f "$src_root/build-bundle.sh" ]]; then
+        echo "invalid GitLab source archive: build-bundle.sh missing" >&2
+        return 1
+      fi
+
+      echo "building bundle from GitLab source $tag"
+      chmod +x "$src_root/build-bundle.sh" || true
+      (
+        cd "$src_root"
+        ./build-bundle.sh
+      )
+
+      if [[ ! -f "$src_root/public/trace-service.tgz" ]]; then
+        echo "bundle build failed: public/trace-service.tgz missing" >&2
+        return 1
+      fi
+
+      cp "$src_root/public/trace-service.tgz" "$out"
+      ;;
+    *)
+      echo "unsupported install source: $INSTALL_SOURCE" >&2
+      return 1
+      ;;
+  esac
 }
 
 has_systemctl() {
@@ -490,9 +595,28 @@ doctor() {
 }
 
 latest_tag() {
-  curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep -m1 '"tag_name"' \
-    | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+  case "$INSTALL_SOURCE" in
+    github)
+      curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+        | grep -m1 '"tag_name"' \
+        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+      ;;
+    gitlab)
+      if [[ -z "$GITLAB_BASE_URL" ]]; then
+        echo "" >&2
+        return 1
+      fi
+      normalize_gitlab_base_url
+      curl -fsSL "$GITLAB_BASE_URL/api/v4/projects/$(repo_api_path)/repository/tags?per_page=1" \
+        | grep -o '"name":"[^"]*"' \
+        | head -n1 \
+        | sed -E 's/"name":"([^"]*)"/\1/'
+      ;;
+    *)
+      echo "" >&2
+      return 1
+      ;;
+  esac
 }
 
 update() {
@@ -513,13 +637,16 @@ update() {
     return 0
   fi
 
-  local url="https://github.com/$REPO/releases/download/$tag/trace-service.tgz"
   local tmp
   tmp="$(mktemp -d)"
   trap "rm -rf '$tmp'" EXIT
 
-  echo "downloading $url"
-  if ! curl -fsSL "$url" | tar -xz -C "$tmp"; then
+  if ! prepare_update_bundle "$tag" "$tmp/trace-service.tgz" "$tmp"; then
+    echo "download or build failed for $tag" >&2
+    exit 1
+  fi
+
+  if ! tar -xzf "$tmp/trace-service.tgz" -C "$tmp"; then
     echo "download or extraction failed for $tag" >&2
     exit 1
   fi
@@ -571,6 +698,7 @@ update() {
   cp -a "$src/." "$APP_DIR/"
   # build-bundle.sh is a dev tool not included in release bundles; ignore if absent.
   chmod +x "$APP_DIR/claw-trace" "$APP_DIR/run.sh" 2>/dev/null || true
+  write_install_source_file
 
   # Re-create the ~/.local/bin symlink so the command stays reachable after update.
   local bin_dir="${CLAW_TRACE_BIN_DIR:-$HOME/.local/bin}"
@@ -650,7 +778,7 @@ claw-trace commands:
   setup-service [--auto|--system|--user]
                              Install and enable a systemd unit when available
   service-mode               Show current service manager mode
-  update [tag]               Update from GitHub release (default: latest)
+  update [tag]               Update from the configured source (default: latest)
   rollback                   Roll back to latest local backup
 EOF
 }

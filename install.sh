@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${CLAW_TRACE_REPO:-jeezrick/claw-trace}"
+DEFAULT_REPO="jeezrick/claw-trace"
+INSTALL_SOURCE="${CLAW_TRACE_INSTALL_SOURCE:-github}"
+REPO="${CLAW_TRACE_REPO:-$DEFAULT_REPO}"
+GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-}"
+PROJECT_NAME="${REPO##*/}"
 TAG="${1:-latest}"
 INSTALL_DIR="${CLAW_TRACE_HOME:-$HOME/claw-trace}"
 BIN_DIR="${CLAW_TRACE_BIN_DIR:-$HOME/.local/bin}"
@@ -65,16 +69,39 @@ ensure_shell_path() {
   done
 }
 
-if [[ "$TAG" == "latest" ]]; then
-  TAG="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
-fi
+repo_api_path() {
+  printf '%s' "${REPO//\//%2F}"
+}
 
-if [[ -z "$TAG" ]]; then
-  echo "[claw-trace] failed to resolve release tag" >&2
-  exit 1
-fi
+normalize_gitlab_base_url() {
+  GITLAB_BASE_URL="${GITLAB_BASE_URL%/}"
+}
 
-URL="https://github.com/$REPO/releases/download/$TAG/trace-service.tgz"
+latest_tag() {
+  case "$INSTALL_SOURCE" in
+    github)
+      curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+        | grep -m1 '"tag_name"' \
+        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+      ;;
+    gitlab)
+      if [[ -z "$GITLAB_BASE_URL" ]]; then
+        echo "[claw-trace] CLAW_TRACE_GITLAB_BASE_URL is required when CLAW_TRACE_INSTALL_SOURCE=gitlab" >&2
+        exit 1
+      fi
+      normalize_gitlab_base_url
+      curl -fsSL "$GITLAB_BASE_URL/api/v4/projects/$(repo_api_path)/repository/tags?per_page=1" \
+        | grep -o '"name":"[^"]*"' \
+        | head -n1 \
+        | sed -E 's/"name":"([^"]*)"/\1/'
+      ;;
+    *)
+      echo "[claw-trace] unsupported install source: $INSTALL_SOURCE" >&2
+      exit 1
+      ;;
+  esac
+}
+
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -93,6 +120,62 @@ retry_download() {
   return 1
 }
 
+prepare_gitlab_bundle() {
+  if [[ -z "$GITLAB_BASE_URL" ]]; then
+    echo "[claw-trace] CLAW_TRACE_GITLAB_BASE_URL is required when CLAW_TRACE_INSTALL_SOURCE=gitlab" >&2
+    exit 1
+  fi
+
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "[claw-trace] npm is required to build from GitLab source" >&2
+    exit 1
+  fi
+
+  local ref="$1"
+  local out="$2"
+  local archive="$TMP_DIR/${PROJECT_NAME}-${ref}.tar.gz"
+  local src_root
+  local src_dir="$TMP_DIR/gitlab-source"
+  local url
+
+  normalize_gitlab_base_url
+  url="$GITLAB_BASE_URL/$REPO/-/archive/$ref/$PROJECT_NAME-$ref.tar.gz"
+
+  echo "[claw-trace] downloading $url"
+  retry_download "$url" "$archive"
+
+  mkdir -p "$src_dir"
+  tar -xzf "$archive" -C "$src_dir"
+  src_root="$(find "$src_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+
+  if [[ -z "$src_root" ]] || [[ ! -f "$src_root/build-bundle.sh" ]]; then
+    echo "[claw-trace] invalid GitLab source archive: build-bundle.sh missing" >&2
+    exit 1
+  fi
+
+  echo "[claw-trace] building bundle from GitLab source $ref"
+  chmod +x "$src_root/build-bundle.sh" || true
+  (
+    cd "$src_root"
+    ./build-bundle.sh
+  )
+
+  if [[ ! -f "$src_root/public/trace-service.tgz" ]]; then
+    echo "[claw-trace] bundle build failed: public/trace-service.tgz missing" >&2
+    exit 1
+  fi
+
+  cp "$src_root/public/trace-service.tgz" "$out"
+}
+
+write_install_source_file() {
+  {
+    printf 'SAVED_CLAW_TRACE_INSTALL_SOURCE=%q\n' "$INSTALL_SOURCE"
+    printf 'SAVED_CLAW_TRACE_REPO=%q\n' "$REPO"
+    printf 'SAVED_CLAW_TRACE_GITLAB_BASE_URL=%q\n' "${GITLAB_BASE_URL%/}"
+  } > "$INSTALL_DIR/.install-source.env"
+}
+
 install_runtime() {
   if ! command -v npm >/dev/null 2>&1; then
     echo "[claw-trace] npm is required to install runtime dependencies" >&2
@@ -106,8 +189,30 @@ install_runtime() {
   )
 }
 
-echo "[claw-trace] downloading $URL"
-retry_download "$URL" "$TMP_DIR/trace-service.tgz"
+if [[ "$TAG" == "latest" ]]; then
+  TAG="$(latest_tag)"
+fi
+
+if [[ -z "$TAG" ]]; then
+  echo "[claw-trace] failed to resolve release tag" >&2
+  exit 1
+fi
+
+case "$INSTALL_SOURCE" in
+  github)
+    URL="https://github.com/$REPO/releases/download/$TAG/trace-service.tgz"
+    echo "[claw-trace] downloading $URL"
+    retry_download "$URL" "$TMP_DIR/trace-service.tgz"
+    ;;
+  gitlab)
+    prepare_gitlab_bundle "$TAG" "$TMP_DIR/trace-service.tgz"
+    ;;
+  *)
+    echo "[claw-trace] unsupported install source: $INSTALL_SOURCE" >&2
+    exit 1
+    ;;
+esac
+
 tar -xzf "$TMP_DIR/trace-service.tgz" -C "$TMP_DIR"
 
 SRC="$TMP_DIR/trace-service"
@@ -137,6 +242,7 @@ rm -rf \
 cp -a "$SRC/." "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/claw-trace" "$INSTALL_DIR/run.sh" || true
 ln -sf "$INSTALL_DIR/claw-trace" "$BIN_DIR/claw-trace"
+write_install_source_file
 
 if [[ ! -f "$INSTALL_DIR/apps/server/dist/index.js" ]]; then
   echo "[claw-trace] backend runtime missing after install" >&2
