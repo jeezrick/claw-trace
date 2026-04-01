@@ -6,6 +6,7 @@ INSTALL_SOURCE="${CLAW_TRACE_INSTALL_SOURCE:-github}"
 REPO="${CLAW_TRACE_REPO:-$DEFAULT_REPO}"
 GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-}"
 GITLAB_PACKAGE_NAME="${CLAW_TRACE_GITLAB_PACKAGE_NAME:-claw-trace}"
+NODE_VERSION_FALLBACK="${CLAW_TRACE_NODE_VERSION:-20}"
 PROJECT_NAME="${REPO##*/}"
 TAG="${1:-latest}"
 INSTALL_DIR="${CLAW_TRACE_HOME:-$HOME/claw-trace}"
@@ -148,13 +149,125 @@ load_node_runtime() {
   [[ -s "$HOME/.nvm/nvm.sh" ]] && source "$HOME/.nvm/nvm.sh"
 }
 
-install_runtime() {
+current_node_major() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo 0
+    return 0
+  fi
+
+  node -p 'const major = Number.parseInt(process.versions.node.split(".")[0], 10); Number.isFinite(major) ? major : 0' 2>/dev/null || echo 0
+}
+
+use_fallback_node_version() {
   load_node_runtime
 
-  if ! command -v npm >/dev/null 2>&1; then
-    echo "[claw-trace] npm is required to install runtime dependencies" >&2
+  if ! command -v nvm >/dev/null 2>&1; then
+    return 1
+  fi
+
+  echo "[claw-trace] switching to Node ${NODE_VERSION_FALLBACK} via nvm"
+
+  if ! nvm use "$NODE_VERSION_FALLBACK" >/dev/null 2>&1; then
+    echo "[claw-trace] installing Node ${NODE_VERSION_FALLBACK} via nvm"
+    nvm install "$NODE_VERSION_FALLBACK" >/dev/null
+    nvm use "$NODE_VERSION_FALLBACK" >/dev/null
+  fi
+
+  hash -r
+  return 0
+}
+
+ensure_supported_node_runtime() {
+  load_node_runtime
+
+  local major
+  major="$(current_node_major)"
+
+  if command -v npm >/dev/null 2>&1 && [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]]; then
+    return 0
+  fi
+
+  if ! use_fallback_node_version; then
+    if ! command -v npm >/dev/null 2>&1; then
+      echo "[claw-trace] npm is required to install runtime dependencies" >&2
+      exit 1
+    fi
+
+    echo "[claw-trace] unsupported Node version $(node -v 2>/dev/null || echo unknown); please switch to Node 18/20/22 or install nvm" >&2
     exit 1
   fi
+
+  major="$(current_node_major)"
+  if ! command -v npm >/dev/null 2>&1 || [[ "$major" -lt 18 ]] || [[ "$major" -gt 22 ]]; then
+    echo "[claw-trace] failed to activate a supported Node runtime" >&2
+    exit 1
+  fi
+}
+
+gitlab_package_exists() {
+  local url="$1"
+  local status
+
+  status="$(curl -sSIL -o /dev/null -w '%{http_code}' "$url" || true)"
+  [[ "$status" == "200" || "$status" == "302" ]]
+}
+
+prepare_gitlab_bundle() {
+  local ref="$1"
+  local out="$2"
+  local package_url archive archive_url src_root src_dir
+
+  if [[ -z "$GITLAB_BASE_URL" ]]; then
+    echo "[claw-trace] CLAW_TRACE_GITLAB_BASE_URL is required when CLAW_TRACE_INSTALL_SOURCE=gitlab" >&2
+    exit 1
+  fi
+
+  package_url="$(gitlab_bundle_url "$ref")"
+
+  if gitlab_package_exists "$package_url"; then
+    echo "[claw-trace] downloading $package_url"
+    retry_download "$package_url" "$out"
+    return 0
+  fi
+
+  echo "[claw-trace] GitLab package is not available yet; falling back to source build"
+  ensure_supported_node_runtime
+
+  archive="$TMP_DIR/${PROJECT_NAME}-${ref}.tar.gz"
+  src_dir="$TMP_DIR/gitlab-source"
+
+  normalize_gitlab_base_url
+  archive_url="$GITLAB_BASE_URL/$REPO/-/archive/$ref/$PROJECT_NAME-$ref.tar.gz"
+
+  echo "[claw-trace] downloading $archive_url"
+  retry_download "$archive_url" "$archive"
+
+  mkdir -p "$src_dir"
+  tar -xzf "$archive" -C "$src_dir"
+  src_root="$(find "$src_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+
+  if [[ -z "$src_root" ]] || [[ ! -f "$src_root/build-bundle.sh" ]]; then
+    echo "[claw-trace] invalid GitLab source archive: build-bundle.sh missing" >&2
+    exit 1
+  fi
+
+  echo "[claw-trace] building bundle from GitLab source $ref"
+  chmod +x "$src_root/build-bundle.sh" || true
+  (
+    cd "$src_root"
+    ./build-bundle.sh
+  )
+
+  if [[ ! -f "$src_root/public/trace-service.tgz" ]]; then
+    echo "[claw-trace] bundle build failed: public/trace-service.tgz missing" >&2
+    exit 1
+  fi
+
+  cp "$src_root/public/trace-service.tgz" "$out"
+}
+
+install_runtime() {
+  ensure_supported_node_runtime
 
   echo "[claw-trace] installing runtime dependencies for this machine"
   (
@@ -179,13 +292,7 @@ case "$INSTALL_SOURCE" in
     retry_download "$URL" "$TMP_DIR/trace-service.tgz"
     ;;
   gitlab)
-    if [[ -z "$GITLAB_BASE_URL" ]]; then
-      echo "[claw-trace] CLAW_TRACE_GITLAB_BASE_URL is required when CLAW_TRACE_INSTALL_SOURCE=gitlab" >&2
-      exit 1
-    fi
-    URL="$(gitlab_bundle_url "$TAG")"
-    echo "[claw-trace] downloading $URL"
-    retry_download "$URL" "$TMP_DIR/trace-service.tgz"
+    prepare_gitlab_bundle "$TAG" "$TMP_DIR/trace-service.tgz"
     ;;
   *)
     echo "[claw-trace] unsupported install source: $INSTALL_SOURCE" >&2
