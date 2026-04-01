@@ -594,6 +594,52 @@ doctor() {
   fi
 }
 
+diagnosis() {
+  ensure_runtime
+
+  local mode
+  mode="$(service_mode)"
+
+  local state="unknown"
+  local detail=""
+  local log_target=""
+
+  if [[ "$mode" != "nohup" ]]; then
+    state="$(systemctl_cmd "$mode" is-active "$SERVICE_NAME" 2>/dev/null || true)"
+    if [[ -z "$state" ]]; then
+      state="unknown"
+    fi
+
+    if [[ "$mode" == "system" ]]; then
+      log_target="journalctl -u $SERVICE_NAME -f"
+    else
+      log_target="journalctl --user -u $SERVICE_NAME -f"
+    fi
+  else
+    if pid="$(running_pid)"; then
+      state="running"
+      detail="pid=$pid"
+    else
+      state="stopped"
+    fi
+
+    log_target="$LOG_FILE"
+  fi
+
+  exec env \
+    NODE_ENV=production \
+    PORT="$PORT" \
+    HOST="$HOST" \
+    SESSIONS_DIR="$SESSIONS_DIR" \
+    RAW_STREAM_FILE="$RAW_STREAM_FILE" \
+    DATABASE_FILE="$DATABASE_FILE" \
+    CLAW_TRACE_DIAGNOSIS_SERVICE_MODE="$mode" \
+    CLAW_TRACE_DIAGNOSIS_SERVICE_STATE="$state" \
+    CLAW_TRACE_DIAGNOSIS_SERVICE_DETAIL="$detail" \
+    CLAW_TRACE_DIAGNOSIS_LOG_TARGET="$log_target" \
+    node "$APP_DIR/apps/server/dist/diagnosis-cli.js" "$@"
+}
+
 latest_tag() {
   case "$INSTALL_SOURCE" in
     github)
@@ -774,6 +820,7 @@ claw-trace commands:
   status                     Show service status
   logs                       Tail service logs
   doctor                     Health checks (process/files/api/raw-stream)
+  diagnosis                  Diagnose current OpenClaw/session state
   version                    Show installed version
   setup-service [--auto|--system|--user]
                              Install and enable a systemd unit when available
@@ -793,6 +840,7 @@ case "$cmd" in
   status) status ;;
   logs) logs ;;
   doctor) doctor ;;
+  diagnosis|-diagnosis) diagnosis "$@" ;;
   version) version ;;
   setup-service) setup_service "${1:---auto}" ;;
   service-mode) service_mode ;;
