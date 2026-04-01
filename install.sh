@@ -367,7 +367,27 @@ fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 NODE
 
   echo "[claw-trace] injected OpenClaw plugin: $plugin_dir"
-  echo "[claw-trace] restart OpenClaw gateway to load /doctor"
+}
+
+restart_openclaw_gateway() {
+  local openclaw_config="$OPENCLAW_HOME/openclaw.json"
+
+  if [[ ! -f "$openclaw_config" ]]; then
+    return 0
+  fi
+
+  if ! command -v openclaw >/dev/null 2>&1; then
+    echo "[claw-trace] openclaw command not found; skip gateway restart" >&2
+    return 1
+  fi
+
+  if openclaw gateway restart >/dev/null 2>&1; then
+    echo "[claw-trace] restarted OpenClaw gateway to load /doctor"
+    return 0
+  fi
+
+  echo "[claw-trace] failed to restart OpenClaw gateway automatically; restart it manually to load /doctor" >&2
+  return 1
 }
 
 cleanup_systemd_units() {
@@ -462,6 +482,7 @@ fi
 install_runtime
 
 inject_openclaw_doctor_plugin
+restart_openclaw_gateway || true
 
 if [[ ! -d "$INSTALL_DIR/node_modules/better-sqlite3" ]]; then
   echo "[claw-trace] runtime dependencies missing after install" >&2
