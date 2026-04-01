@@ -140,7 +140,17 @@ write_install_source_file() {
   } > "$INSTALL_DIR/.install-source.env"
 }
 
+load_node_runtime() {
+  # Load nvm directly so non-interactive installs can still find node/npm.
+  # Sourcing ~/.bashrc is not enough on many machines because it returns early
+  # when PS1 is empty.
+  # shellcheck source=/dev/null
+  [[ -s "$HOME/.nvm/nvm.sh" ]] && source "$HOME/.nvm/nvm.sh"
+}
+
 install_runtime() {
+  load_node_runtime
+
   if ! command -v npm >/dev/null 2>&1; then
     echo "[claw-trace] npm is required to install runtime dependencies" >&2
     exit 1
