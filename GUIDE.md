@@ -1,4 +1,4 @@
-# Claw Trace 服务开发总结与使用指南（v1.1.6）
+# Claw Trace 服务开发总结与使用指南（v1.1.20）
 
 ![截图示例](docs/screenshot.png)
 
@@ -23,15 +23,16 @@
 - 与 OpenClaw 主 workspace 解耦
 - 支持在其他机器快速运行
 - 默认自动读取 `/root/.openclaw/agents/main/sessions`
-- 支持 GitHub Release 公开下载
+- 支持 GitHub Release + GitLab Package Registry 双通道分发
 - 支持 `claw-trace update` 更新
 
 ---
 
 ## 二、最终交付
 
-- **仓库地址**：`git@github.com:jeezrick/claw-trace.git`
-- **当前版本**：v1.1.6
+- **GitHub 仓库**：`git@github.com:jeezrick/claw-trace.git`
+- **GitLab 仓库**：`git@192.168.16.6:wonderful/claw-trace.git`
+- **当前版本**：v1.1.20
 - **代码目录**：`~/claw-trace`（安装后）/ `/root/code/claw-trace`（开发机）
 
 ### 关键文件
@@ -45,7 +46,8 @@
 | `install.sh` | 一键安装脚本 |
 | `run.sh` | 服务启动脚本 |
 | `build-bundle.sh` | 打包脚本（生成 `trace-service.tgz`） |
-| `.github/workflows/release.yml` | tag 自动发布 Release 资产 |
+| `.github/workflows/release.yml` | tag 自动发布 GitHub Release 资产 |
+| `.gitlab-ci.yml` | tag 自动发布 GitLab Package Registry 资产 |
 | `VERSION` | 当前版本号 |
 
 ---
@@ -116,8 +118,16 @@ OpenClaw sessions/*.jsonl
 
 ### 1）一键安装（推荐）
 
+GitHub 版：
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | bash -s -- latest
+curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install-github.sh | bash
+```
+
+GitLab 版：
+
+```bash
+curl -fsSL http://192.168.16.6/wonderful/claw-trace/-/raw/main/install-gitlab.sh | bash
 ```
 
 安装脚本会自动把 `~/.local/bin` 写入常见 shell 启动文件；如果当前终端还没刷新，直接用绝对路径即可：
@@ -163,7 +173,8 @@ claw-trace doctor             # 健康诊断
 claw-trace setup-service      # 手动重装/启用 systemd 托管
 claw-trace service-mode       # 查看当前托管模式（systemd/nohup）
 claw-trace update             # 更新到 latest
-claw-trace update v1.1.6      # 更新到指定版本
+claw-trace diagnosis          # 汇总 session 状态并输出诊断
+claw-trace update v1.1.20     # 更新到指定版本
 claw-trace rollback
 ```
 
@@ -242,12 +253,12 @@ SESSIONS_DIR=/your/path PORT=8787 HOST=0.0.0.0 claw-trace restart
 ### 发布新版本
 
 1. 提交并推送 `main`
-2. 更新 `VERSION` 文件（如 `v1.1.7`）
+2. 更新 `VERSION` 文件（如 `v1.1.20`）
 3. 打 tag 并推送：
 
 ```bash
-git tag v1.1.7
-git push origin v1.1.7
+git tag v1.1.20
+git push origin v1.1.20
 ```
 
 GitHub Actions 自动执行：
@@ -256,11 +267,17 @@ GitHub Actions 自动执行：
 - 生成 `trace-service.tgz`（含编译后前后端 + node_modules）
 - 创建 Release 并上传资产
 
+GitLab CI 自动执行：
+
+- 运行 `./build-bundle.sh`
+- 生成 `trace-service.tgz`
+- 上传到 Generic Package Registry
+
 ### 用户侧更新
 
 ```bash
 claw-trace update          # 更新到 latest
-claw-trace update v1.1.7   # 更新到指定版本
+claw-trace update v1.1.20  # 更新到指定版本
 claw-trace restart
 claw-trace status
 ```
@@ -302,3 +319,5 @@ npm run v2:web:dev      # 仅启动前端
 | v1.1.1 | SSE 推送模式（session_updated / action_history_updated） |
 | v1.1.5 | 多 Workspace 切换器 |
 | v1.1.6 | 修复 Agentic Chain 面板无法滚动问题 |
+| v1.1.19 | GitHub / GitLab 双安装源支持 |
+| v1.1.20 | CLI `diagnosis` + GitHub/GitLab 双完整分发方案 |

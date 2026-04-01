@@ -16,6 +16,7 @@ DEFAULT_REPO="jeezrick/claw-trace"
 SAVED_CLAW_TRACE_INSTALL_SOURCE=""
 SAVED_CLAW_TRACE_REPO=""
 SAVED_CLAW_TRACE_GITLAB_BASE_URL=""
+SAVED_CLAW_TRACE_GITLAB_PACKAGE_NAME=""
 if [[ -f "$INSTALL_SOURCE_FILE" ]]; then
   # shellcheck source=/dev/null
   source "$INSTALL_SOURCE_FILE"
@@ -23,6 +24,7 @@ fi
 REPO="${CLAW_TRACE_REPO:-${SAVED_CLAW_TRACE_REPO:-$DEFAULT_REPO}}"
 INSTALL_SOURCE="${CLAW_TRACE_INSTALL_SOURCE:-${SAVED_CLAW_TRACE_INSTALL_SOURCE:-github}}"
 GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-${SAVED_CLAW_TRACE_GITLAB_BASE_URL:-}}"
+GITLAB_PACKAGE_NAME="${CLAW_TRACE_GITLAB_PACKAGE_NAME:-${SAVED_CLAW_TRACE_GITLAB_PACKAGE_NAME:-claw-trace}}"
 PROJECT_NAME="${REPO##*/}"
 STATE_DIR="${CLAW_TRACE_STATE_DIR:-$HOME/.local/state/claw-trace}"
 PID_FILE="$STATE_DIR/server.pid"
@@ -59,6 +61,16 @@ normalize_gitlab_base_url() {
   GITLAB_BASE_URL="${GITLAB_BASE_URL%/}"
 }
 
+gitlab_bundle_url() {
+  local tag="$1"
+  normalize_gitlab_base_url
+  printf '%s/api/v4/projects/%s/packages/generic/%s/%s/trace-service.tgz' \
+    "$GITLAB_BASE_URL" \
+    "$(repo_api_path)" \
+    "$GITLAB_PACKAGE_NAME" \
+    "$tag"
+}
+
 download_with_retry() {
   local url="$1"
   local out="$2"
@@ -79,13 +91,13 @@ write_install_source_file() {
     printf 'SAVED_CLAW_TRACE_INSTALL_SOURCE=%q\n' "$INSTALL_SOURCE"
     printf 'SAVED_CLAW_TRACE_REPO=%q\n' "$REPO"
     printf 'SAVED_CLAW_TRACE_GITLAB_BASE_URL=%q\n' "${GITLAB_BASE_URL%/}"
+    printf 'SAVED_CLAW_TRACE_GITLAB_PACKAGE_NAME=%q\n' "$GITLAB_PACKAGE_NAME"
   } > "$INSTALL_SOURCE_FILE"
 }
 
 prepare_update_bundle() {
   local tag="$1"
   local out="$2"
-  local tmp="$3"
 
   case "$INSTALL_SOURCE" in
     github)
@@ -98,44 +110,10 @@ prepare_update_bundle() {
         echo "CLAW_TRACE_GITLAB_BASE_URL is required when CLAW_TRACE_INSTALL_SOURCE=gitlab" >&2
         return 1
       fi
-      if ! command -v npm >/dev/null 2>&1; then
-        echo "npm is required to build updates from GitLab source" >&2
-        return 1
-      fi
-
-      local archive="$tmp/${PROJECT_NAME}-${tag}.tar.gz"
-      local src_dir="$tmp/gitlab-source"
-      local src_root
       local url
-
-      normalize_gitlab_base_url
-      url="$GITLAB_BASE_URL/$REPO/-/archive/$tag/$PROJECT_NAME-$tag.tar.gz"
-
+      url="$(gitlab_bundle_url "$tag")"
       echo "downloading $url"
-      download_with_retry "$url" "$archive"
-
-      mkdir -p "$src_dir"
-      tar -xzf "$archive" -C "$src_dir"
-      src_root="$(find "$src_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
-
-      if [[ -z "$src_root" ]] || [[ ! -f "$src_root/build-bundle.sh" ]]; then
-        echo "invalid GitLab source archive: build-bundle.sh missing" >&2
-        return 1
-      fi
-
-      echo "building bundle from GitLab source $tag"
-      chmod +x "$src_root/build-bundle.sh" || true
-      (
-        cd "$src_root"
-        ./build-bundle.sh
-      )
-
-      if [[ ! -f "$src_root/public/trace-service.tgz" ]]; then
-        echo "bundle build failed: public/trace-service.tgz missing" >&2
-        return 1
-      fi
-
-      cp "$src_root/public/trace-service.tgz" "$out"
+      download_with_retry "$url" "$out"
       ;;
     *)
       echo "unsupported install source: $INSTALL_SOURCE" >&2

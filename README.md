@@ -9,17 +9,45 @@ OpenClaw Agent 执行链路可视化服务。实时展示每个 session 的完�
 - **实时链路流** — 通过 SSE 实时推送 OpenClaw 网关产出的 raw stream 事件，无需手动刷新
 - **Workspace 切换** — 支持切换不同 Agent workspace
 
-## 快速安装
+## 安装方案
+
+### GitHub 完整方案
+
+- 代码托管：GitHub
+- 预构建产物：GitHub Release 里的 `trace-service.tgz`
+- 安装入口：[install-github.sh](./install-github.sh)
+- 安装后 `claw-trace update` / `rollback` 会继续沿用 GitHub
+
+安装命令：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install-github.sh | bash
 ```
 
-内网 GitLab 安装：
+### GitLab 完整方案
+
+- 代码托管：GitLab
+- 预构建产物：GitLab Generic Package Registry 里的 `trace-service.tgz`
+- 安装入口：[install-gitlab.sh](./install-gitlab.sh)
+- 安装后 `claw-trace update` / `rollback` 会继续沿用 GitLab
+
+安装命令：
 
 ```bash
-curl -fsSL http://192.168.16.6/wonderful/claw-trace/-/raw/main/install.sh | env CLAW_TRACE_INSTALL_SOURCE=gitlab CLAW_TRACE_GITLAB_BASE_URL=http://192.168.16.6 CLAW_TRACE_REPO=wonderful/claw-trace bash -s -- latest
+curl -fsSL http://192.168.16.6/wonderful/claw-trace/-/raw/main/install-gitlab.sh | bash
 ```
+
+### 底层安装脚本
+
+如果你要自定义安装源、仓库或 base URL，也可以直接调用底层 [install.sh](./install.sh)：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh | CLAW_TRACE_INSTALL_SOURCE=github bash
+```
+
+说明：
+- 两套方案都会下载预构建的 `trace-service.tgz`，不会在目标机器上重新构建前后端。
+- 目标机器仍需要 `node` 和 `npm`，因为安装过程中会执行 `npm ci --omit=dev` 安装 server 运行时依赖。
 
 安装完成后可立刻启动服务：
 
@@ -43,6 +71,44 @@ claw-trace start
 打开浏览器访问 `http://<机器IP>:8787`。
 
 > 已有旧版？直接重新执行安装命令即可，脚本会自动停掉旧进程并用新版本拉起。
+
+## 发给 OpenClaw 的安装文案
+
+### GitHub 版本
+
+```text
+详细文档
+Claw Trace 服务开发总结与使用指南（GitHub 版）
+
+安装：
+curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install-github.sh | bash
+
+安装后：
+claw-trace start
+claw-trace status
+访问：http://<服务器机器IP>:8787/
+
+请在服务器上执行 ifconfig，找到可访问的内网 IP（例如 192.168.16.xx），然后用：
+http://<实际服务器IP>:8787/
+```
+
+### GitLab 版本
+
+```text
+详细文档
+Claw Trace 服务开发总结与使用指南（GitLab 版）
+
+安装：
+curl -fsSL http://192.168.16.6/wonderful/claw-trace/-/raw/main/install-gitlab.sh | bash
+
+安装后：
+claw-trace start
+claw-trace status
+访问：http://<服务器机器IP>:8787/
+
+请在服务器上执行 ifconfig，找到可访问的内网 IP（例如 192.168.16.xx），然后用：
+http://<实际服务器IP>:8787/
+```
 
 ## 命令行
 
@@ -127,11 +193,24 @@ OpenClaw 网关
 
 ## 发版
 
-打 tag 后 GitHub Actions 自动构建并发布 Release：
+### GitHub 发布
+
+GitHub 侧打 tag 后，GitHub Actions 自动构建并发布 Release：
 
 ```bash
-git tag v1.1.1
-git push origin main --tags
+git push origin main
+git tag v1.1.20
+git push origin v1.1.20
 ```
 
-CI 会执行 `./build-bundle.sh`，生成 `trace-service.tgz` 并上传到 Release Assets。
+CI 会执行 `./build-bundle.sh`，生成 `trace-service.tgz` 并上传到 GitHub Release Assets。
+
+### GitLab 发布
+
+GitLab 侧打同版本 tag 后，GitLab CI 会执行同样的 `./build-bundle.sh`，并把 `trace-service.tgz` 上传到 Generic Package Registry。
+
+GitLab CI 配置见 [.gitlab-ci.yml](./.gitlab-ci.yml)。
+
+说明：
+- GitHub 和 GitLab 两边可以同时存在同版本号。
+- 如果两边历史不是同一个 commit 哈希，需要分别在各自仓库的 `main` 头上创建同版本 tag。
