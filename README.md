@@ -200,8 +200,8 @@ GitHub 侧打 tag 后，GitHub Actions 自动构建并发布 Release：
 
 ```bash
 git push origin main
-git tag v1.1.21
-git push origin v1.1.21
+git tag v1.1.22
+git push origin v1.1.22
 ```
 
 CI 会执行 `./build-bundle.sh`，生成 `trace-service.tgz` 并上传到 GitHub Release Assets。
