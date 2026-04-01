@@ -53,6 +53,7 @@ claw-trace restart     # 重启服务
 claw-trace status      # 查看运行状态
 claw-trace logs        # 查看日志
 claw-trace doctor      # 一键健康检查
+claw-trace diagnosis   # 汇总 session 状态并输出诊断；若配置模型则附带 AI 总结
 claw-trace setup-service   # 手动重装/启用 systemd 托管
 claw-trace service-mode    # 查看当前托管模式（systemd/nohup）
 claw-trace update      # 更新到最新版
