@@ -48,6 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/jeezrick/claw-trace/main/install.sh
 说明：
 - 两套方案都会下载预构建的 `trace-service.tgz`，不会在目标机器上重新构建前后端。
 - 目标机器仍需要 `node` 和 `npm`，因为安装过程中会执行 `npm ci --omit=dev` 安装 server 运行时依赖。
+- 如果机器上存在 `~/.openclaw/openclaw.json`，安装时会自动注入独立的 `claw-trace-doctor-plugin`，重启 OpenClaw gateway 后即可在飞书里使用 `/doctor`。
 
 安装完成后可立刻启动服务：
 
@@ -199,8 +200,8 @@ GitHub 侧打 tag 后，GitHub Actions 自动构建并发布 Release：
 
 ```bash
 git push origin main
-git tag v1.1.20
-git push origin v1.1.20
+git tag v1.1.21
+git push origin v1.1.21
 ```
 
 CI 会执行 `./build-bundle.sh`，生成 `trace-service.tgz` 并上传到 GitHub Release Assets。

@@ -1,4 +1,4 @@
-# Claw Trace 服务开发总结与使用指南（v1.1.20）
+# Claw Trace 服务开发总结与使用指南（v1.1.21）
 
 ![截图示例](docs/screenshot.png)
 
@@ -32,7 +32,7 @@
 
 - **GitHub 仓库**：`git@github.com:jeezrick/claw-trace.git`
 - **GitLab 仓库**：`git@192.168.16.6:wonderful/claw-trace.git`
-- **当前版本**：v1.1.20
+- **当前版本**：v1.1.21
 - **代码目录**：`~/claw-trace`（安装后）/ `/root/code/claw-trace`（开发机）
 
 ### 关键文件
@@ -130,6 +130,8 @@ GitLab 版：
 curl -fsSL http://192.168.16.6/wonderful/claw-trace/-/raw/main/install-gitlab.sh | bash
 ```
 
+如果机器上已经存在 `~/.openclaw/openclaw.json`，安装过程会自动注入独立的 `claw-trace-doctor-plugin`。重启 OpenClaw gateway 后，即可在飞书里使用 `/doctor`。
+
 安装脚本会自动把 `~/.local/bin` 写入常见 shell 启动文件；如果当前终端还没刷新，直接用绝对路径即可：
 
 ```bash
@@ -174,7 +176,7 @@ claw-trace setup-service      # 手动重装/启用 systemd 托管
 claw-trace service-mode       # 查看当前托管模式（systemd/nohup）
 claw-trace update             # 更新到 latest
 claw-trace diagnosis          # 汇总 session 状态并输出诊断
-claw-trace update v1.1.20     # 更新到指定版本
+claw-trace update v1.1.21     # 更新到指定版本
 claw-trace rollback
 ```
 
@@ -253,12 +255,12 @@ SESSIONS_DIR=/your/path PORT=8787 HOST=0.0.0.0 claw-trace restart
 ### 发布新版本
 
 1. 提交并推送 `main`
-2. 更新 `VERSION` 文件（如 `v1.1.20`）
+2. 更新 `VERSION` 文件（如 `v1.1.21`）
 3. 打 tag 并推送：
 
 ```bash
-git tag v1.1.20
-git push origin v1.1.20
+git tag v1.1.21
+git push origin v1.1.21
 ```
 
 GitHub Actions 自动执行：
@@ -277,7 +279,7 @@ GitLab CI 自动执行：
 
 ```bash
 claw-trace update          # 更新到 latest
-claw-trace update v1.1.20  # 更新到指定版本
+claw-trace update v1.1.21  # 更新到指定版本
 claw-trace restart
 claw-trace status
 ```
@@ -321,3 +323,4 @@ npm run v2:web:dev      # 仅启动前端
 | v1.1.6 | 修复 Agentic Chain 面板无法滚动问题 |
 | v1.1.19 | GitHub / GitLab 双安装源支持 |
 | v1.1.20 | CLI `diagnosis` + GitHub/GitLab 双完整分发方案 |
+| v1.1.21 | 安装时自动注入 OpenClaw `/doctor` 插件 |

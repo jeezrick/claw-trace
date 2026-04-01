@@ -1,0 +1,15 @@
+{
+  "name": "claw-trace-doctor-plugin",
+  "version": "__CLAW_TRACE_VERSION__",
+  "description": "OpenClaw doctor command plugin for claw-trace diagnosis",
+  "type": "module",
+  "files": [
+    "**/*"
+  ],
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  },
+  "main": "index.js"
+}
