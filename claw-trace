@@ -32,6 +32,7 @@ REPO="${CLAW_TRACE_REPO:-${SAVED_CLAW_TRACE_REPO:-$DEFAULT_REPO}}"
 INSTALL_SOURCE="${CLAW_TRACE_INSTALL_SOURCE:-${SAVED_CLAW_TRACE_INSTALL_SOURCE:-github}}"
 GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-${SAVED_CLAW_TRACE_GITLAB_BASE_URL:-}}"
 GITLAB_PACKAGE_NAME="${CLAW_TRACE_GITLAB_PACKAGE_NAME:-${SAVED_CLAW_TRACE_GITLAB_PACKAGE_NAME:-claw-trace}}"
+NODE_VERSION_FALLBACK="${CLAW_TRACE_NODE_VERSION:-20}"
 PROJECT_NAME="${REPO##*/}"
 OPENCLAW_HOME="${CLAW_TRACE_OPENCLAW_HOME:-$HOME/.openclaw}"
 OPENCLAW_DOCTOR_PLUGIN_ID="claw-trace-doctor-plugin"
@@ -103,6 +104,66 @@ write_install_source_file() {
     printf 'SAVED_CLAW_TRACE_GITLAB_BASE_URL=%q\n' "${GITLAB_BASE_URL%/}"
     printf 'SAVED_CLAW_TRACE_GITLAB_PACKAGE_NAME=%q\n' "$GITLAB_PACKAGE_NAME"
   } > "$INSTALL_SOURCE_FILE"
+}
+
+load_node_runtime() {
+  # shellcheck source=/dev/null
+  [[ -s "$HOME/.nvm/nvm.sh" ]] && source "$HOME/.nvm/nvm.sh"
+}
+
+current_node_major() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo 0
+    return 0
+  fi
+
+  node -p 'const major = Number.parseInt(process.versions.node.split(".")[0], 10); Number.isFinite(major) ? major : 0' 2>/dev/null || echo 0
+}
+
+use_fallback_node_version() {
+  load_node_runtime
+
+  if ! command -v nvm >/dev/null 2>&1; then
+    return 1
+  fi
+
+  echo "switching to Node ${NODE_VERSION_FALLBACK} via nvm"
+
+  if ! nvm use "$NODE_VERSION_FALLBACK" >/dev/null 2>&1; then
+    echo "installing Node ${NODE_VERSION_FALLBACK} via nvm"
+    nvm install "$NODE_VERSION_FALLBACK" >/dev/null
+    nvm use "$NODE_VERSION_FALLBACK" >/dev/null
+  fi
+
+  hash -r
+  return 0
+}
+
+ensure_supported_node_runtime() {
+  load_node_runtime
+
+  local major
+  major="$(current_node_major)"
+
+  if command -v npm >/dev/null 2>&1 && [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]]; then
+    return 0
+  fi
+
+  if ! use_fallback_node_version; then
+    echo "unsupported or missing Node runtime; install Node 18/20/22 or nvm" >&2
+    return 1
+  fi
+
+  major="$(current_node_major)"
+  [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]] && command -v npm >/dev/null 2>&1
+}
+
+gitlab_package_exists() {
+  local url="$1"
+  local status
+
+  status="$(curl -sSIL -o /dev/null -w '%{http_code}' "$url" || true)"
+  [[ "$status" == "200" || "$status" == "302" ]]
 }
 
 inject_openclaw_doctor_plugin() {
@@ -213,8 +274,67 @@ prepare_update_bundle() {
       fi
       local url
       url="$(gitlab_bundle_url "$tag")"
-      echo "downloading $url"
-      download_with_retry "$url" "$out"
+      if gitlab_package_exists "$url"; then
+        echo "downloading $url"
+        download_with_retry "$url" "$out"
+        return 0
+      fi
+
+      echo "GitLab package is not available yet; falling back to source build"
+      if ! ensure_supported_node_runtime; then
+        return 1
+      fi
+
+      local tmp
+      local archive
+      local src_dir
+      local src_root
+      local archive_url
+      local bundle_root
+
+      tmp="$(mktemp -d)"
+      archive="$tmp/${PROJECT_NAME}-${tag}.tar.gz"
+      src_dir="$tmp/gitlab-source"
+      archive_url="${GITLAB_BASE_URL%/}/$REPO/-/archive/$tag/$PROJECT_NAME-$tag.tar.gz"
+
+      echo "downloading $archive_url"
+      download_with_retry "$archive_url" "$archive"
+      mkdir -p "$src_dir"
+      tar -xzf "$archive" -C "$src_dir"
+      src_root="$(find "$src_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)"
+
+      if [[ -z "$src_root" ]]; then
+        rm -rf "$tmp"
+        echo "invalid GitLab source archive" >&2
+        return 1
+      fi
+
+      (
+        cd "$src_root"
+        npm ci --ignore-scripts >/dev/null
+        npm run v2:build >/dev/null
+      )
+
+      bundle_root="$tmp/gitlab-bundle"
+      mkdir -p "$bundle_root/trace-service/apps/server" "$bundle_root/trace-service/apps/web"
+      cp -r "$src_root/apps/server/dist" "$bundle_root/trace-service/apps/server/dist"
+      cp -r "$src_root/apps/web/dist" "$bundle_root/trace-service/apps/web/dist"
+      if [[ -d "$src_root/openclaw-plugin" ]]; then
+        cp -r "$src_root/openclaw-plugin" "$bundle_root/trace-service/openclaw-plugin"
+      fi
+      cp "$src_root/apps/server/package.json" "$bundle_root/trace-service/apps/server/package.json"
+      cp "$src_root/package.json" "$src_root/package-lock.json" "$src_root/run.sh" "$src_root/README.md" "$src_root/VERSION" "$src_root/claw-trace" "$src_root/install.sh" "$bundle_root/trace-service/"
+
+      if [[ -f "$src_root/install-github.sh" ]]; then
+        cp "$src_root/install-github.sh" "$bundle_root/trace-service/install-github.sh"
+      fi
+
+      if [[ -f "$src_root/install-gitlab.sh" ]]; then
+        cp "$src_root/install-gitlab.sh" "$bundle_root/trace-service/install-gitlab.sh"
+      fi
+
+      tar -C "$bundle_root" -czf "$out" trace-service
+      rm -rf "$tmp"
       ;;
     *)
       echo "unsupported install source: $INSTALL_SOURCE" >&2

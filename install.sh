@@ -272,6 +272,9 @@ prepare_gitlab_bundle() {
   mkdir -p "$bundle_root/trace-service/apps/server" "$bundle_root/trace-service/apps/web"
   cp -r "$src_root/apps/server/dist" "$bundle_root/trace-service/apps/server/dist"
   cp -r "$src_root/apps/web/dist" "$bundle_root/trace-service/apps/web/dist"
+  if [[ -d "$src_root/openclaw-plugin" ]]; then
+    cp -r "$src_root/openclaw-plugin" "$bundle_root/trace-service/openclaw-plugin"
+  fi
   cp "$src_root/apps/server/package.json" "$bundle_root/trace-service/apps/server/package.json"
   cp "$src_root/package.json" "$src_root/package-lock.json" "$src_root/run.sh" "$src_root/README.md" "$src_root/VERSION" "$src_root/claw-trace" "$src_root/install.sh" "$bundle_root/trace-service/"
 
