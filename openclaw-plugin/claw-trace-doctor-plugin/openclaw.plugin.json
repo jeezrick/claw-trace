@@ -1,0 +1,8 @@
+{
+  "id": "claw-trace-doctor-plugin",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

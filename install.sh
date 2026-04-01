@@ -9,6 +9,9 @@ REPO="${CLAW_TRACE_REPO:-$DEFAULT_REPO}"
 GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-}"
 GITLAB_PACKAGE_NAME="${CLAW_TRACE_GITLAB_PACKAGE_NAME:-claw-trace}"
 NODE_VERSION_FALLBACK="${CLAW_TRACE_NODE_VERSION:-20}"
+OPENCLAW_HOME="${CLAW_TRACE_OPENCLAW_HOME:-$HOME/.openclaw}"
+OPENCLAW_DOCTOR_PLUGIN_ID="claw-trace-doctor-plugin"
+OPENCLAW_DOCTOR_WITH_AI="${CLAW_TRACE_DOCTOR_WITH_AI:-0}"
 PROJECT_NAME="${REPO##*/}"
 TAG="${1:-latest}"
 INSTALL_DIR="${CLAW_TRACE_HOME:-$HOME/claw-trace}"
@@ -293,6 +296,80 @@ install_runtime() {
   )
 }
 
+inject_openclaw_doctor_plugin() {
+  local openclaw_config="$OPENCLAW_HOME/openclaw.json"
+  local template_dir="$INSTALL_DIR/openclaw-plugin/$OPENCLAW_DOCTOR_PLUGIN_ID"
+  local plugin_dir="$OPENCLAW_HOME/extensions/$OPENCLAW_DOCTOR_PLUGIN_ID"
+  local doctor_command="$INSTALL_DIR/claw-trace"
+  local version_no_v
+  local escaped_command
+
+  if [[ ! -f "$openclaw_config" ]]; then
+    return 0
+  fi
+
+  if [[ ! -d "$template_dir" ]]; then
+    echo "[claw-trace] OpenClaw doctor plugin template missing at $template_dir" >&2
+    return 1
+  fi
+
+  ensure_supported_node_runtime
+
+  version_no_v="${TAG#v}"
+  escaped_command="$(printf '%s' "$doctor_command" | sed 's/[\\/&]/\\&/g')"
+
+  mkdir -p "$plugin_dir"
+  cp "$template_dir/openclaw.plugin.json" "$plugin_dir/openclaw.plugin.json"
+  sed \
+    -e "s/__CLAW_TRACE_VERSION__/$version_no_v/g" \
+    "$template_dir/package.json" > "$plugin_dir/package.json"
+  sed \
+    -e "s/__CLAW_TRACE_COMMAND__/$escaped_command/g" \
+    -e "s/__CLAW_TRACE_WITH_AI__/$OPENCLAW_DOCTOR_WITH_AI/g" \
+    "$template_dir/index.js" > "$plugin_dir/index.js"
+
+  node - "$openclaw_config" "$OPENCLAW_DOCTOR_PLUGIN_ID" "$plugin_dir" "$version_no_v" <<'NODE'
+const fs = require('fs');
+
+const [configPath, pluginId, pluginDir, version] = process.argv.slice(2);
+const now = new Date().toISOString();
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+config.plugins = config.plugins ?? {};
+config.plugins.entries = config.plugins.entries ?? {};
+config.plugins.installs = config.plugins.installs ?? {};
+config.plugins.allow = Array.isArray(config.plugins.allow) ? config.plugins.allow : [];
+
+const prevEntry = config.plugins.entries[pluginId] ?? {};
+config.plugins.entries[pluginId] = {
+  ...prevEntry,
+  enabled: true,
+};
+
+const prevInstall = config.plugins.installs[pluginId] ?? {};
+config.plugins.installs[pluginId] = {
+  source: 'local',
+  spec: pluginDir,
+  installPath: pluginDir,
+  version,
+  resolvedName: pluginId,
+  resolvedVersion: version,
+  resolvedSpec: pluginDir,
+  resolvedAt: prevInstall.resolvedAt ?? now,
+  installedAt: now,
+};
+
+if (!config.plugins.allow.includes(pluginId)) {
+  config.plugins.allow.push(pluginId);
+}
+
+fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+NODE
+
+  echo "[claw-trace] injected OpenClaw plugin: $plugin_dir"
+  echo "[claw-trace] restart OpenClaw gateway to load /doctor"
+}
+
 cleanup_systemd_units() {
   local reloaded=0
 
@@ -383,6 +460,8 @@ if [[ ! -f "$INSTALL_DIR/apps/web/dist/index.html" ]]; then
 fi
 
 install_runtime
+
+inject_openclaw_doctor_plugin
 
 if [[ ! -d "$INSTALL_DIR/node_modules/better-sqlite3" ]]; then
   echo "[claw-trace] runtime dependencies missing after install" >&2
