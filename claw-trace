@@ -33,6 +33,9 @@ INSTALL_SOURCE="${CLAW_TRACE_INSTALL_SOURCE:-${SAVED_CLAW_TRACE_INSTALL_SOURCE:-
 GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-${SAVED_CLAW_TRACE_GITLAB_BASE_URL:-}}"
 GITLAB_PACKAGE_NAME="${CLAW_TRACE_GITLAB_PACKAGE_NAME:-${SAVED_CLAW_TRACE_GITLAB_PACKAGE_NAME:-claw-trace}}"
 PROJECT_NAME="${REPO##*/}"
+OPENCLAW_HOME="${CLAW_TRACE_OPENCLAW_HOME:-$HOME/.openclaw}"
+OPENCLAW_DOCTOR_PLUGIN_ID="claw-trace-doctor-plugin"
+OPENCLAW_DOCTOR_WITH_AI="${CLAW_TRACE_DOCTOR_WITH_AI:-0}"
 STATE_DIR="${CLAW_TRACE_STATE_DIR:-$HOME/.local/state/claw-trace}"
 PID_FILE="$STATE_DIR/server.pid"
 LOG_FILE="${CLAW_TRACE_LOG_FILE:-/tmp/claw-trace.log}"
@@ -100,6 +103,97 @@ write_install_source_file() {
     printf 'SAVED_CLAW_TRACE_GITLAB_BASE_URL=%q\n' "${GITLAB_BASE_URL%/}"
     printf 'SAVED_CLAW_TRACE_GITLAB_PACKAGE_NAME=%q\n' "$GITLAB_PACKAGE_NAME"
   } > "$INSTALL_SOURCE_FILE"
+}
+
+inject_openclaw_doctor_plugin() {
+  local openclaw_config="$OPENCLAW_HOME/openclaw.json"
+  local template_dir="$APP_DIR/openclaw-plugin/$OPENCLAW_DOCTOR_PLUGIN_ID"
+  local plugin_dir="$OPENCLAW_HOME/extensions/$OPENCLAW_DOCTOR_PLUGIN_ID"
+  local doctor_command="$APP_DIR/claw-trace"
+  local version_no_v
+  local escaped_command
+
+  if [[ ! -f "$openclaw_config" ]]; then
+    return 0
+  fi
+
+  if [[ ! -d "$template_dir" ]]; then
+    echo "OpenClaw doctor plugin template missing at $template_dir" >&2
+    return 1
+  fi
+
+  version_no_v="$(version)"
+  version_no_v="${version_no_v#v}"
+  escaped_command="$(printf '%s' "$doctor_command" | sed 's/[\\/&]/\\&/g')"
+
+  mkdir -p "$plugin_dir"
+  cp "$template_dir/openclaw.plugin.json" "$plugin_dir/openclaw.plugin.json"
+  sed \
+    -e "s/__CLAW_TRACE_VERSION__/$version_no_v/g" \
+    "$template_dir/package.json" > "$plugin_dir/package.json"
+  sed \
+    -e "s/__CLAW_TRACE_COMMAND__/$escaped_command/g" \
+    -e "s/__CLAW_TRACE_WITH_AI__/$OPENCLAW_DOCTOR_WITH_AI/g" \
+    "$template_dir/index.js" > "$plugin_dir/index.js"
+
+  node - "$openclaw_config" "$OPENCLAW_DOCTOR_PLUGIN_ID" "$plugin_dir" "$version_no_v" <<'NODE'
+const fs = require('fs');
+
+const [configPath, pluginId, pluginDir, version] = process.argv.slice(2);
+const now = new Date().toISOString();
+const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+config.plugins = config.plugins ?? {};
+config.plugins.entries = config.plugins.entries ?? {};
+config.plugins.installs = config.plugins.installs ?? {};
+config.plugins.allow = Array.isArray(config.plugins.allow) ? config.plugins.allow : [];
+
+const prevEntry = config.plugins.entries[pluginId] ?? {};
+config.plugins.entries[pluginId] = {
+  ...prevEntry,
+  enabled: true,
+};
+
+const prevInstall = config.plugins.installs[pluginId] ?? {};
+config.plugins.installs[pluginId] = {
+  source: 'local',
+  spec: pluginDir,
+  installPath: pluginDir,
+  version,
+  resolvedName: pluginId,
+  resolvedVersion: version,
+  resolvedSpec: pluginDir,
+  resolvedAt: prevInstall.resolvedAt ?? now,
+  installedAt: now,
+};
+
+if (!config.plugins.allow.includes(pluginId)) {
+  config.plugins.allow.push(pluginId);
+}
+
+fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+NODE
+
+  echo "refreshed OpenClaw plugin: $plugin_dir"
+}
+
+restart_openclaw_gateway() {
+  if [[ ! -f "$OPENCLAW_HOME/openclaw.json" ]]; then
+    return 0
+  fi
+
+  if ! command -v openclaw >/dev/null 2>&1; then
+    echo "openclaw command not found; skip gateway restart" >&2
+    return 1
+  fi
+
+  if openclaw gateway restart >/dev/null 2>&1; then
+    echo "restarted OpenClaw gateway"
+    return 0
+  fi
+
+  echo "failed to restart OpenClaw gateway automatically; restart it manually" >&2
+  return 1
 }
 
 prepare_update_bundle() {
@@ -764,6 +858,8 @@ update() {
     exit 1
   fi
 
+  inject_openclaw_doctor_plugin || true
+  restart_openclaw_gateway || true
 
   echo "updated: $current -> $(version)"
   "$APP_DIR/claw-trace" start
