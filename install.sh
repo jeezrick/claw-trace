@@ -252,18 +252,28 @@ prepare_gitlab_bundle() {
   fi
 
   echo "[claw-trace] building bundle from GitLab source $ref"
-  chmod +x "$src_root/build-bundle.sh" || true
   (
     cd "$src_root"
-    ./build-bundle.sh
+    npm ci --ignore-scripts >/dev/null
+    npm run v2:build >/dev/null
   )
 
-  if [[ ! -f "$src_root/public/trace-service.tgz" ]]; then
-    echo "[claw-trace] bundle build failed: public/trace-service.tgz missing" >&2
-    exit 1
+  local bundle_root="$TMP_DIR/gitlab-bundle"
+  mkdir -p "$bundle_root/trace-service/apps/server" "$bundle_root/trace-service/apps/web"
+  cp -r "$src_root/apps/server/dist" "$bundle_root/trace-service/apps/server/dist"
+  cp -r "$src_root/apps/web/dist" "$bundle_root/trace-service/apps/web/dist"
+  cp "$src_root/apps/server/package.json" "$bundle_root/trace-service/apps/server/package.json"
+  cp "$src_root/package.json" "$src_root/package-lock.json" "$src_root/run.sh" "$src_root/README.md" "$src_root/VERSION" "$src_root/claw-trace" "$src_root/install.sh" "$bundle_root/trace-service/"
+
+  if [[ -f "$src_root/install-github.sh" ]]; then
+    cp "$src_root/install-github.sh" "$bundle_root/trace-service/install-github.sh"
   fi
 
-  cp "$src_root/public/trace-service.tgz" "$out"
+  if [[ -f "$src_root/install-gitlab.sh" ]]; then
+    cp "$src_root/install-gitlab.sh" "$bundle_root/trace-service/install-gitlab.sh"
+  fi
+
+  tar -C "$bundle_root" -czf "$out" trace-service
 }
 
 install_runtime() {
