@@ -351,7 +351,7 @@ config.plugins.entries[pluginId] = {
 
 const prevInstall = config.plugins.installs[pluginId] ?? {};
 config.plugins.installs[pluginId] = {
-  source: 'local',
+  source: 'path',
   spec: pluginDir,
   installPath: pluginDir,
   version,
