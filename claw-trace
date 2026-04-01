@@ -10,6 +10,13 @@ while [[ -L "$SCRIPT_PATH" ]]; do
     SCRIPT_PATH="$(cd "$(dirname "$SCRIPT_PATH")" && cd "$(dirname "$LINK_TARGET")" && pwd)/$(basename "$LINK_TARGET")"
   fi
 done
+
+if [[ -z "${HOME:-}" ]]; then
+  HOME="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
+  HOME="${HOME:-/root}"
+  export HOME
+fi
+
 APP_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 INSTALL_SOURCE_FILE="$APP_DIR/.install-source.env"
 DEFAULT_REPO="jeezrick/claw-trace"

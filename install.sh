@@ -3,6 +3,8 @@ set -euo pipefail
 
 DEFAULT_REPO="jeezrick/claw-trace"
 INSTALL_SOURCE="${CLAW_TRACE_INSTALL_SOURCE:-github}"
+INSTALL_SERVICE_MODE="${CLAW_TRACE_INSTALL_SERVICE_MODE:-nohup}"
+START_AFTER_INSTALL="${CLAW_TRACE_START_AFTER_INSTALL:-1}"
 REPO="${CLAW_TRACE_REPO:-$DEFAULT_REPO}"
 GITLAB_BASE_URL="${CLAW_TRACE_GITLAB_BASE_URL:-}"
 GITLAB_PACKAGE_NAME="${CLAW_TRACE_GITLAB_PACKAGE_NAME:-claw-trace}"
@@ -12,6 +14,11 @@ TAG="${1:-latest}"
 INSTALL_DIR="${CLAW_TRACE_HOME:-$HOME/claw-trace}"
 BIN_DIR="${CLAW_TRACE_BIN_DIR:-$HOME/.local/bin}"
 EXISTING_CMD="$INSTALL_DIR/claw-trace"
+SYSTEMCTL_BIN="${CLAW_TRACE_SYSTEMCTL_BIN:-systemctl}"
+SERVICE_NAME="${CLAW_TRACE_SERVICE_NAME:-claw-trace.service}"
+SYSTEM_UNIT_PATH="${CLAW_TRACE_SYSTEMD_SYSTEM_UNIT_PATH:-/etc/systemd/system/$SERVICE_NAME}"
+USER_UNIT_DIR="${CLAW_TRACE_SYSTEMD_USER_UNIT_DIR:-$HOME/.config/systemd/user}"
+USER_UNIT_PATH="$USER_UNIT_DIR/$SERVICE_NAME"
 WAS_RUNNING=0
 
 path_has_bin_dir() {
@@ -286,6 +293,30 @@ install_runtime() {
   )
 }
 
+cleanup_systemd_units() {
+  local reloaded=0
+
+  if command -v "$SYSTEMCTL_BIN" >/dev/null 2>&1; then
+    "$SYSTEMCTL_BIN" stop "$SERVICE_NAME" >/dev/null 2>&1 || true
+    "$SYSTEMCTL_BIN" disable "$SERVICE_NAME" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -f "$SYSTEM_UNIT_PATH" ]]; then
+    rm -f "$SYSTEM_UNIT_PATH"
+    reloaded=1
+  fi
+
+  if [[ -f "$USER_UNIT_PATH" ]]; then
+    rm -f "$USER_UNIT_PATH"
+    reloaded=1
+  fi
+
+  if [[ "$reloaded" == "1" ]] && command -v "$SYSTEMCTL_BIN" >/dev/null 2>&1; then
+    "$SYSTEMCTL_BIN" daemon-reload >/dev/null 2>&1 || true
+    "$SYSTEMCTL_BIN" --user daemon-reload >/dev/null 2>&1 || true
+  fi
+}
+
 if [[ "$TAG" == "latest" ]]; then
   TAG="$(latest_tag)"
 fi
@@ -359,19 +390,34 @@ if [[ ! -d "$INSTALL_DIR/node_modules/better-sqlite3" ]]; then
 fi
 
 SYSTEMD_MODE=""
-if SYSTEMD_OUTPUT="$($INSTALL_DIR/claw-trace setup-service --auto 2>&1)"; then
-  echo "$SYSTEMD_OUTPUT"
-  SYSTEMD_MODE="$($INSTALL_DIR/claw-trace service-mode 2>/dev/null || true)"
-else
-  echo "$SYSTEMD_OUTPUT"
-fi
+case "$INSTALL_SERVICE_MODE" in
+  nohup)
+    cleanup_systemd_units
+    ;;
+  auto|system|user)
+    if SYSTEMD_OUTPUT="$($INSTALL_DIR/claw-trace setup-service --$INSTALL_SERVICE_MODE 2>&1)"; then
+      echo "$SYSTEMD_OUTPUT"
+      SYSTEMD_MODE="$($INSTALL_DIR/claw-trace service-mode 2>/dev/null || true)"
+    else
+      echo "$SYSTEMD_OUTPUT"
+    fi
+    ;;
+  *)
+    echo "[claw-trace] unsupported install service mode: $INSTALL_SERVICE_MODE" >&2
+    exit 1
+    ;;
+esac
 
 # Always write the PATH export to shell startup files so that new login sessions
 # (e.g. fresh SSH connections) can find the claw-trace command without manual setup.
 ensure_shell_path
 
-if [[ "$WAS_RUNNING" == "1" ]]; then
-  echo "[claw-trace] restarting service on the freshly installed version"
+if [[ "$START_AFTER_INSTALL" == "1" ]]; then
+  if [[ "$WAS_RUNNING" == "1" ]]; then
+    echo "[claw-trace] restarting service on the freshly installed version"
+  else
+    echo "[claw-trace] starting service"
+  fi
   "$INSTALL_DIR/claw-trace" start
 fi
 
