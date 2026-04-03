@@ -538,9 +538,10 @@ setup_service() {
 
 run_server() {
   ensure_runtime
-  # Load nvm so node is in PATH when running under systemd (no interactive shell).
-  # shellcheck source=/dev/null
-  [[ -s "$HOME/.nvm/nvm.sh" ]] && source "$HOME/.nvm/nvm.sh"
+  if ! ensure_supported_node_runtime; then
+    echo "failed to activate a supported Node runtime for claw-trace" >&2
+    exit 1
+  fi
   exec env \
     NODE_ENV=production \
     PORT="$PORT" \
