@@ -214,6 +214,13 @@ ensure_supported_node_runtime() {
   fi
 }
 
+with_supported_node_runtime() {
+  (
+    ensure_supported_node_runtime
+    "$@"
+  )
+}
+
 gitlab_package_exists() {
   local url="$1"
   local status
@@ -264,8 +271,8 @@ prepare_gitlab_bundle() {
   echo "[claw-trace] building bundle from GitLab source $ref"
   (
     cd "$src_root"
-    npm ci --ignore-scripts >/dev/null
-    npm run v2:build >/dev/null
+    with_supported_node_runtime npm ci --ignore-scripts >/dev/null
+    with_supported_node_runtime npm run v2:build >/dev/null
   )
 
   local bundle_root="$TMP_DIR/gitlab-bundle"
@@ -290,12 +297,10 @@ prepare_gitlab_bundle() {
 }
 
 install_runtime() {
-  ensure_supported_node_runtime
-
   echo "[claw-trace] installing runtime dependencies for this machine"
   (
     cd "$INSTALL_DIR"
-    npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false
+    with_supported_node_runtime npm ci --omit=dev --workspace @claw-trace/server --include-workspace-root=false
   )
 }
 
@@ -316,8 +321,6 @@ inject_openclaw_doctor_plugin() {
     return 1
   fi
 
-  ensure_supported_node_runtime
-
   version_no_v="${TAG#v}"
   escaped_command="$(printf '%s' "$doctor_command" | sed 's/[\\/&]/\\&/g')"
 
@@ -331,7 +334,7 @@ inject_openclaw_doctor_plugin() {
     -e "s/__CLAW_TRACE_WITH_AI__/$OPENCLAW_DOCTOR_WITH_AI/g" \
     "$template_dir/index.js" > "$plugin_dir/index.js"
 
-  node - "$openclaw_config" "$OPENCLAW_DOCTOR_PLUGIN_ID" "$plugin_dir" "$version_no_v" <<'NODE'
+  with_supported_node_runtime node - "$openclaw_config" "$OPENCLAW_DOCTOR_PLUGIN_ID" "$plugin_dir" "$version_no_v" <<'NODE'
 const fs = require('fs');
 
 const [configPath, pluginId, pluginDir, version] = process.argv.slice(2);

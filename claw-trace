@@ -158,6 +158,44 @@ ensure_supported_node_runtime() {
   [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]] && command -v npm >/dev/null 2>&1
 }
 
+# Return the absolute path to a supported Node binary (18-22) without modifying
+# the current shell's PATH.  Used by run_server and diagnosis so that claw-trace
+# always runs with the Node version that better-sqlite3 was compiled against,
+# while leaving the caller's environment (e.g. OpenClaw's Node 24) untouched.
+find_server_node_binary() {
+  load_node_runtime
+
+  local major
+  major="$(current_node_major)"
+
+  # Current node is already in the supported range — use it directly.
+  if command -v node >/dev/null 2>&1 && [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]]; then
+    command -v node
+    return 0
+  fi
+
+  # Current node is outside 18-22; locate the fallback version via nvm without
+  # calling `nvm use` (which would mutate PATH for the calling shell).
+  if ! command -v nvm >/dev/null 2>&1; then
+    return 1
+  fi
+
+  local node_bin
+  node_bin="$(nvm which "$NODE_VERSION_FALLBACK" 2>/dev/null || true)"
+
+  if [[ ! -x "${node_bin:-}" ]]; then
+    echo "[claw-trace] installing Node ${NODE_VERSION_FALLBACK} via nvm" >&2
+    nvm install "$NODE_VERSION_FALLBACK" >/dev/null 2>&1
+    node_bin="$(nvm which "$NODE_VERSION_FALLBACK" 2>/dev/null || true)"
+  fi
+
+  if [[ ! -x "${node_bin:-}" ]]; then
+    return 1
+  fi
+
+  echo "$node_bin"
+}
+
 gitlab_package_exists() {
   local url="$1"
   local status
@@ -538,10 +576,14 @@ setup_service() {
 
 run_server() {
   ensure_runtime
-  if ! ensure_supported_node_runtime; then
-    echo "failed to activate a supported Node runtime for claw-trace" >&2
+
+  local node_bin
+  node_bin="$(find_server_node_binary)"
+  if [[ ! -x "${node_bin:-}" ]]; then
+    echo "[claw-trace] no supported Node runtime found (need 18–22). Install Node ${NODE_VERSION_FALLBACK} or nvm." >&2
     exit 1
   fi
+
   exec env \
     NODE_ENV=production \
     PORT="$PORT" \
@@ -549,7 +591,7 @@ run_server() {
     SESSIONS_DIR="$SESSIONS_DIR" \
     RAW_STREAM_FILE="$RAW_STREAM_FILE" \
     DATABASE_FILE="$DATABASE_FILE" \
-    node "$SERVER_JS"
+    "$node_bin" "$SERVER_JS"
 }
 
 start_nohup() {
@@ -797,6 +839,13 @@ doctor() {
 diagnosis() {
   ensure_runtime
 
+  local node_bin
+  node_bin="$(find_server_node_binary)"
+  if [[ ! -x "${node_bin:-}" ]]; then
+    echo "[claw-trace] no supported Node runtime found (need 18–22). Install Node ${NODE_VERSION_FALLBACK} or nvm." >&2
+    exit 1
+  fi
+
   local mode
   mode="$(service_mode)"
 
@@ -837,7 +886,7 @@ diagnosis() {
     CLAW_TRACE_DIAGNOSIS_SERVICE_STATE="$state" \
     CLAW_TRACE_DIAGNOSIS_SERVICE_DETAIL="$detail" \
     CLAW_TRACE_DIAGNOSIS_LOG_TARGET="$log_target" \
-    node "$APP_DIR/apps/server/dist/diagnosis-cli.js" "$@"
+    "$node_bin" "$APP_DIR/apps/server/dist/diagnosis-cli.js" "$@"
 }
 
 latest_tag() {
