@@ -123,7 +123,7 @@ current_node_major() {
 use_fallback_node_version() {
   load_node_runtime
 
-  if ! command -v nvm >/dev/null 2>&1; then
+  if ! type nvm >/dev/null 2>&1; then
     return 1
   fi
 
@@ -145,17 +145,17 @@ ensure_supported_node_runtime() {
   local major
   major="$(current_node_major)"
 
-  if command -v npm >/dev/null 2>&1 && [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]]; then
+  if command -v npm >/dev/null 2>&1 && [[ "$major" -ge 18 ]]; then
     return 0
   fi
 
   if ! use_fallback_node_version; then
-    echo "unsupported or missing Node runtime; install Node 18/20/22 or nvm" >&2
+    echo "unsupported or missing Node runtime; install Node 18+ or nvm" >&2
     return 1
   fi
 
   major="$(current_node_major)"
-  [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]] && command -v npm >/dev/null 2>&1
+  [[ "$major" -ge 18 ]] && command -v npm >/dev/null 2>&1
 }
 
 # Return the absolute path to a supported Node binary (18-22) without modifying
@@ -169,14 +169,14 @@ find_server_node_binary() {
   major="$(current_node_major)"
 
   # Current node is already in the supported range — use it directly.
-  if command -v node >/dev/null 2>&1 && [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]]; then
+  if command -v node >/dev/null 2>&1 && [[ "$major" -ge 18 ]]; then
     command -v node
     return 0
   fi
 
-  # Current node is outside 18-22; locate the fallback version via nvm without
+  # Current node is below 18; locate the fallback version via nvm without
   # calling `nvm use` (which would mutate PATH for the calling shell).
-  if ! command -v nvm >/dev/null 2>&1; then
+  if ! type nvm >/dev/null 2>&1; then
     return 1
   fi
 

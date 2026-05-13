@@ -171,7 +171,7 @@ current_node_major() {
 use_fallback_node_version() {
   load_node_runtime
 
-  if ! command -v nvm >/dev/null 2>&1; then
+  if ! type nvm >/dev/null 2>&1; then
     return 1
   fi
 
@@ -193,7 +193,7 @@ ensure_supported_node_runtime() {
   local major
   major="$(current_node_major)"
 
-  if command -v npm >/dev/null 2>&1 && [[ "$major" -ge 18 ]] && [[ "$major" -le 22 ]]; then
+  if command -v npm >/dev/null 2>&1 && [[ "$major" -ge 18 ]]; then
     return 0
   fi
 
@@ -203,12 +203,12 @@ ensure_supported_node_runtime() {
       exit 1
     fi
 
-    echo "[claw-trace] unsupported Node version $(node -v 2>/dev/null || echo unknown); please switch to Node 18/20/22 or install nvm" >&2
+    echo "[claw-trace] unsupported Node version $(node -v 2>/dev/null || echo unknown); please switch to Node 18+ or install nvm" >&2
     exit 1
   fi
 
   major="$(current_node_major)"
-  if ! command -v npm >/dev/null 2>&1 || [[ "$major" -lt 18 ]] || [[ "$major" -gt 22 ]]; then
+  if ! command -v npm >/dev/null 2>&1 || [[ "$major" -lt 18 ]]; then
     echo "[claw-trace] failed to activate a supported Node runtime" >&2
     exit 1
   fi
@@ -297,6 +297,20 @@ prepare_gitlab_bundle() {
 }
 
 install_runtime() {
+  # 优先检查 bundle 中是否已包含兼容的 node_modules
+  if [[ -d "$INSTALL_DIR/node_modules/better-sqlite3" ]]; then
+    local node_bin
+    node_bin="$(command -v node 2>/dev/null || true)"
+    if [[ -x "${node_bin:-}" ]]; then
+      if "$node_bin" -e "require('$INSTALL_DIR/node_modules/better-sqlite3')" >/dev/null 2>&1; then
+        echo "[claw-trace] bundled node_modules are compatible; skipping npm ci"
+        return 0
+      else
+        echo "[claw-trace] bundled node_modules are not compatible with this Node runtime; reinstalling"
+      fi
+    fi
+  fi
+
   echo "[claw-trace] installing runtime dependencies for this machine"
   (
     cd "$INSTALL_DIR"
