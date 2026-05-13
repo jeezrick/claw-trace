@@ -302,7 +302,7 @@ install_runtime() {
     local node_bin
     node_bin="$(command -v node 2>/dev/null || true)"
     if [[ -x "${node_bin:-}" ]]; then
-      if "$node_bin" -e "require('$INSTALL_DIR/node_modules/better-sqlite3')" >/dev/null 2>&1; then
+      if "$node_bin" -e "new (require('$INSTALL_DIR/node_modules/better-sqlite3'))(':memory:')" >/dev/null 2>&1; then
         echo "[claw-trace] bundled node_modules are compatible; skipping npm ci"
         return 0
       else
